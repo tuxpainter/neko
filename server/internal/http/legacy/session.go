@@ -38,12 +38,12 @@ type session struct {
 	serverAddr string
 	pathPrefix string
 
-	id, ip    string
-	token     string
-	name      string
-	isAdmin   bool
-	webCodecs bool
-	client    *http.Client
+	id, ip  string
+	token   string
+	name    string
+	isAdmin bool
+	media   mediaMode
+	client  *http.Client
 
 	lastHostID         string
 	lockedControls     bool
@@ -70,9 +70,23 @@ func (h *LegacyHandler) newSession(r *http.Request) *session {
 		client: &http.Client{
 			Transport: transport,
 		},
-		sessions:  make(map[string]*memberStruct),
-		webCodecs: r.URL.Query().Get("webcodecs") == "1",
+		sessions: make(map[string]*memberStruct),
+		media:    parseMediaMode(r.URL.Query().Get("media")),
 	}
+}
+
+type mediaMode string
+
+const (
+	mediaModeWebRTC    mediaMode = "webrtc"
+	mediaModeWebCodecs mediaMode = "webcodecs"
+)
+
+func parseMediaMode(value string) mediaMode {
+	if mediaMode(value) == mediaModeWebCodecs {
+		return mediaModeWebCodecs
+	}
+	return mediaModeWebRTC
 }
 
 func (s *session) req(method, reqPath string, headers http.Header, request io.Reader) (io.ReadCloser, http.Header, error) {

@@ -41,7 +41,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
 
   get supported() {
     return (
-      new URLSearchParams(location.search).get('webcodecs') === '1' ||
+      new URLSearchParams(location.search).get('media') === 'webcodecs' ||
       (typeof RTCPeerConnection !== 'undefined' && typeof RTCPeerConnection.prototype.addTransceiver !== 'undefined')
     )
   }
@@ -64,7 +64,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
       return
     }
 
-    this._webCodecsMode = new URL(url).searchParams.get('webcodecs') === '1'
+    this._webCodecsMode = new URL(url).searchParams.get('media') === 'webcodecs'
     if (!this.supported) {
       this.onDisconnected(new Error('browser does not support webrtc (RTCPeerConnection missing)'))
       return

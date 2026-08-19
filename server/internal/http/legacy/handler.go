@@ -122,7 +122,7 @@ func (h *LegacyHandler) Route(r types.Router) {
 		s.connBackend = connBackend
 
 		// WebCodecs carries media and the existing WebSocket carries controls, so no WebRTC peer is needed.
-		if !s.webCodecs {
+		if s.media == mediaModeWebRTC {
 			videoAuto := true
 			err = s.toBackend(event.SIGNAL_REQUEST, message.SignalRequest{
 				Video: types.PeerVideoRequest{Auto: &videoAuto},
