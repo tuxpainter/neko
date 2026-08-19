@@ -258,7 +258,11 @@ func (s *session) wsToClient(msg []byte) error {
 		}
 
 		var media *oldMessage.Media
-		if s.media == mediaModeWebCodecsWS {
+		if s.media == mediaModeWebCodecsWS || s.media == mediaModeWebCodecsWT {
+			transport := ""
+			if s.media == mediaModeWebCodecsWT {
+				transport = "webtransport"
+			}
 			var ticket struct {
 				Ticket   string                `json:"ticket"`
 				Protocol string                `json:"protocol"`
@@ -266,13 +270,18 @@ func (s *session) wsToClient(msg []byte) error {
 				Audio    oldMessage.MediaCodec `json:"audio"`
 			}
 			err = s.apiReq("POST", "/api/media/ticket", struct {
-				VideoID string `json:"video_id"`
-			}{VideoID: "legacy"}, &ticket)
+				VideoID   string `json:"video_id"`
+				Transport string `json:"transport,omitempty"`
+			}{VideoID: "legacy", Transport: transport}, &ticket)
 			if err != nil {
 				s.logger.Debug().Err(err).Msg("WebCodecs media transport is unavailable")
 			} else {
+				mediaPath := "/media/ws"
+				if s.media == mediaModeWebCodecsWT {
+					mediaPath = "/media/wt"
+				}
 				media = &oldMessage.Media{
-					URL:      path.Join(s.pathPrefix, "/media/ws") + "?ticket=" + url.QueryEscape(ticket.Ticket),
+					URL:      path.Join(s.pathPrefix, mediaPath) + "?ticket=" + url.QueryEscape(ticket.Ticket),
 					Protocol: ticket.Protocol,
 					Video:    ticket.Video,
 					Audio:    ticket.Audio,

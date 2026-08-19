@@ -21,7 +21,10 @@ const ticketLifetime = 30 * time.Second
 
 type Transport string
 
-const TransportWebSocket Transport = "websocket"
+const (
+	TransportWebSocket    Transport = "websocket"
+	TransportWebTransport Transport = "webtransport"
+)
 
 type Ticket struct {
 	sessionID string
@@ -38,9 +41,10 @@ type Peer interface {
 }
 
 type Manager struct {
-	logger   zerolog.Logger
-	sessions types.SessionManager
-	source   types.EncodedMediaSource
+	logger              zerolog.Logger
+	sessions            types.SessionManager
+	source              types.EncodedMediaSource
+	webTransportEnabled bool
 
 	mu      sync.Mutex
 	tickets map[string]Ticket
@@ -48,13 +52,14 @@ type Manager struct {
 	closed  bool
 }
 
-func New(sessions types.SessionManager, source types.EncodedMediaSource) *Manager {
+func New(sessions types.SessionManager, source types.EncodedMediaSource, webTransportEnabled bool) *Manager {
 	manager := &Manager{
-		logger:   log.With().Str("module", "media").Logger(),
-		sessions: sessions,
-		source:   source,
-		tickets:  map[string]Ticket{},
-		peers:    map[Peer]struct{}{},
+		logger:              log.With().Str("module", "media").Logger(),
+		sessions:            sessions,
+		source:              source,
+		webTransportEnabled: webTransportEnabled,
+		tickets:             map[string]Ticket{},
+		peers:               map[Peer]struct{}{},
 	}
 
 	sessions.OnDeleted(func(session types.Session) {
@@ -84,7 +89,8 @@ func (manager *Manager) Route(router types.Router) {
 }
 
 type ticketRequest struct {
-	VideoID string `json:"video_id"`
+	VideoID   string `json:"video_id"`
+	Transport string `json:"transport,omitempty"`
 }
 
 type ticketResponse struct {
@@ -116,6 +122,16 @@ func (manager *Manager) createTicket(w http.ResponseWriter, request *http.Reques
 	if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 		return utils.HttpBadRequest().WithInternalErr(err)
 	}
+	transport := Transport(payload.Transport)
+	if transport == "" {
+		transport = TransportWebSocket
+	}
+	if transport != TransportWebSocket && transport != TransportWebTransport {
+		return utils.HttpUnprocessableEntity("media transport is not supported")
+	}
+	if transport == TransportWebTransport && !manager.webTransportEnabled {
+		return utils.HttpError(http.StatusServiceUnavailable, "media webtransport requires server TLS")
+	}
 	_, _, videoConfig, audioConfig, err := manager.resolve(payload.VideoID)
 	if err != nil {
 		return utils.HttpUnprocessableEntity(err.Error())
@@ -139,14 +155,16 @@ func (manager *Manager) createTicket(w http.ResponseWriter, request *http.Reques
 		}
 	}
 	manager.tickets[token] = Ticket{
-		sessionID: session.ID(), videoID: payload.VideoID, transport: TransportWebSocket, expires: now.Add(ticketLifetime),
+		sessionID: session.ID(), videoID: payload.VideoID, transport: transport, expires: now.Add(ticketLifetime),
 	}
 	manager.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	return json.NewEncoder(w).Encode(ticketResponse{
-		Ticket: token, Protocol: "webcodecs-ws-v1", Video: videoConfig, Audio: audioConfig,
-	})
+	protocol := "webcodecs-ws-v1"
+	if transport == TransportWebTransport {
+		protocol = "webcodecs-wt-v1"
+	}
+	return json.NewEncoder(w).Encode(ticketResponse{Ticket: token, Protocol: protocol, Video: videoConfig, Audio: audioConfig})
 }
 
 func (manager *Manager) resolve(videoID string) (types.EncodedStream, types.EncodedStream, codecConfig, codecConfig, error) {
