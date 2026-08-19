@@ -15,6 +15,7 @@ interface EncodedVideoChunkInit {
   timestamp: number
   duration?: number
   data: BufferSource
+  transfer?: ArrayBuffer[]
 }
 
 interface EncodedAudioChunkInit {
@@ -22,6 +23,7 @@ interface EncodedAudioChunkInit {
   timestamp: number
   duration?: number
   data: BufferSource
+  transfer?: ArrayBuffer[]
 }
 
 declare class EncodedVideoChunk {
