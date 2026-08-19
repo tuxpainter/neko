@@ -3,6 +3,9 @@ import { EncodedMediaSample } from './media-protocol'
 import { MediaTransport } from './media-transport'
 import { MediaWebSocket } from './media-websocket'
 
+const MAX_VIDEO_DECODE_QUEUE_SIZE = 4
+const MAX_AUDIO_DECODE_QUEUE_SIZE = 9
+
 export class WebCodecsPlayer {
   private transport?: MediaTransport
   private videoDecoder?: VideoDecoder
@@ -117,7 +120,10 @@ export class WebCodecsPlayer {
       if (sample.track === 'video') {
         if (!this.haveVideoKeyframe && !sample.keyframe) return
         if (sample.keyframe) this.haveVideoKeyframe = true
-        if (!sample.keyframe && (this.videoDecoder?.decodeQueueSize ?? 0) > 3) return
+        if ((this.videoDecoder?.decodeQueueSize ?? 0) >= MAX_VIDEO_DECODE_QUEUE_SIZE) {
+          this.fail(new Error('media video decoder queue overflow'))
+          return
+        }
         this.videoDecoder?.decode(
           new EncodedVideoChunk({
             type: sample.keyframe ? 'key' : 'delta',
@@ -127,7 +133,10 @@ export class WebCodecsPlayer {
           }),
         )
       } else {
-        if ((this.audioDecoder?.decodeQueueSize ?? 0) > 8) return
+        if ((this.audioDecoder?.decodeQueueSize ?? 0) >= MAX_AUDIO_DECODE_QUEUE_SIZE) {
+          this.fail(new Error('media audio decoder queue overflow'))
+          return
+        }
         this.audioDecoder?.decode(
           new EncodedAudioChunk({
             type: 'key',
