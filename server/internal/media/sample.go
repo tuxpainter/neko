@@ -2,17 +2,28 @@ package media
 
 import (
 	"encoding/binary"
+	"sync"
 	"time"
 
 	"github.com/m1k1o/neko/server/pkg/types"
 )
 
 const (
-	protocolVersion  byte = 1
-	VideoTrack       byte = 1
-	AudioTrack       byte = 2
-	SampleHeaderSize      = 20
+	protocolVersion       byte = 1
+	VideoTrack            byte = 1
+	AudioTrack            byte = 2
+	SampleHeaderSize           = 20
+	minSampleBufferSize        = 1 << 10
+	maxSampleBufferSize        = 4 << 20
+	sampleBufferPoolCount      = 13
 )
+
+var sampleBufferPools [sampleBufferPoolCount]sync.Pool
+
+type EncodedSample struct {
+	Data      []byte
+	poolIndex int
+}
 
 type sampleWriter interface {
 	WriteSample(byte, types.Sample)
@@ -44,17 +55,57 @@ func (consumer *trackConsumer) WriteSample(sample types.Sample) {
 	consumer.peer.WriteSample(consumer.track, sample)
 }
 
-func EncodeSample(track byte, sample types.Sample) []byte {
-	message := make([]byte, SampleHeaderSize+len(sample.Data))
-	message[0] = protocolVersion
-	message[1] = track
-	if !sample.DeltaUnit {
-		message[2] = 1
+func EncodeSample(track byte, sample types.Sample) *EncodedSample {
+	size := SampleHeaderSize + len(sample.Data)
+	poolIndex, capacity := sampleBufferPool(size)
+	var message *EncodedSample
+	if poolIndex >= 0 {
+		message, _ = sampleBufferPools[poolIndex].Get().(*EncodedSample)
 	}
-	binary.BigEndian.PutUint64(message[4:12], uint64(durationMicroseconds(sample.PTS)))
-	binary.BigEndian.PutUint64(message[12:20], uint64(durationMicroseconds(sample.Duration)))
-	copy(message[SampleHeaderSize:], sample.Data)
+	if message == nil {
+		message = &EncodedSample{Data: make([]byte, capacity)}
+	}
+	message.Data = message.Data[:size]
+	message.poolIndex = poolIndex
+	clear(message.Data[:SampleHeaderSize])
+
+	message.Data[0] = protocolVersion
+	message.Data[1] = track
+	if !sample.DeltaUnit {
+		message.Data[2] = 1
+	}
+	binary.BigEndian.PutUint64(message.Data[4:12], uint64(durationMicroseconds(sample.PTS)))
+	binary.BigEndian.PutUint64(message.Data[12:20], uint64(durationMicroseconds(sample.Duration)))
+	copy(message.Data[SampleHeaderSize:], sample.Data)
 	return message
+}
+
+func (sample *EncodedSample) Release() {
+	if sample == nil || sample.poolIndex < 0 {
+		return
+	}
+	poolIndex := sample.poolIndex
+	sample.poolIndex = -1
+	sample.Data = sample.Data[:sampleBufferCapacity(poolIndex)]
+	sampleBufferPools[poolIndex].Put(sample)
+}
+
+func sampleBufferPool(size int) (int, int) {
+	if size > maxSampleBufferSize {
+		return -1, size
+	}
+	capacity := minSampleBufferSize
+	for poolIndex := 0; poolIndex < sampleBufferPoolCount; poolIndex++ {
+		if size <= capacity {
+			return poolIndex, capacity
+		}
+		capacity <<= 1
+	}
+	return -1, size
+}
+
+func sampleBufferCapacity(poolIndex int) int {
+	return minSampleBufferSize << poolIndex
 }
 
 func durationMicroseconds(duration time.Duration) int64 {

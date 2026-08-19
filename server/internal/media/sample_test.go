@@ -13,7 +13,9 @@ type sampleRecorder struct {
 }
 
 func (recorder *sampleRecorder) WriteSample(track byte, sample types.Sample) {
-	recorder.samples = append(recorder.samples, EncodeSample(track, sample))
+	encoded := EncodeSample(track, sample)
+	recorder.samples = append(recorder.samples, append([]byte(nil), encoded.Data...))
+	encoded.Release()
 }
 
 func TestEncodeSample(t *testing.T) {
@@ -25,22 +27,60 @@ func TestEncodeSample(t *testing.T) {
 	}
 
 	message := EncodeSample(VideoTrack, sample)
-	if len(message) != SampleHeaderSize+len(sample.Data) {
-		t.Fatalf("message length = %d", len(message))
+	defer message.Release()
+	if len(message.Data) != SampleHeaderSize+len(sample.Data) {
+		t.Fatalf("message length = %d", len(message.Data))
 	}
-	if message[0] != protocolVersion || message[1] != VideoTrack || message[2] != 1 {
-		t.Fatalf("header = %v", message[:4])
+	if message.Data[0] != protocolVersion || message.Data[1] != VideoTrack || message.Data[2] != 1 {
+		t.Fatalf("header = %v", message.Data[:4])
 	}
-	if got := int64(binary.BigEndian.Uint64(message[4:12])); got != 1234 {
+	if got := int64(binary.BigEndian.Uint64(message.Data[4:12])); got != 1234 {
 		t.Fatalf("timestamp = %d", got)
 	}
-	if got := int64(binary.BigEndian.Uint64(message[12:20])); got != -1 {
+	if got := int64(binary.BigEndian.Uint64(message.Data[12:20])); got != -1 {
 		t.Fatalf("duration = %d", got)
 	}
 	for index, value := range sample.Data {
-		if message[SampleHeaderSize+index] != value {
-			t.Fatalf("payload = %v", message[SampleHeaderSize:])
+		if message.Data[SampleHeaderSize+index] != value {
+			t.Fatalf("payload = %v", message.Data[SampleHeaderSize:])
 		}
+	}
+}
+
+func TestEncodeSampleClearsPooledHeader(t *testing.T) {
+	keyframe := EncodeSample(VideoTrack, types.Sample{Data: []byte{1}})
+	if keyframe.Data[2] != 1 {
+		t.Fatal("keyframe flag is not set")
+	}
+	keyframe.Release()
+
+	delta := EncodeSample(VideoTrack, types.Sample{Data: []byte{2}, DeltaUnit: true})
+	defer delta.Release()
+	if delta.Data[2] != 0 {
+		t.Fatal("stale keyframe flag was retained")
+	}
+}
+
+func TestSampleBufferPoolBounds(t *testing.T) {
+	if poolIndex, capacity := sampleBufferPool(maxSampleBufferSize); poolIndex < 0 || capacity != maxSampleBufferSize {
+		t.Fatalf("maximum pooled buffer = (%d, %d)", poolIndex, capacity)
+	}
+	if poolIndex, capacity := sampleBufferPool(maxSampleBufferSize + 1); poolIndex != -1 || capacity != maxSampleBufferSize+1 {
+		t.Fatalf("oversized buffer = (%d, %d)", poolIndex, capacity)
+	}
+}
+
+func TestEncodeSampleReusesBuffer(t *testing.T) {
+	sample := types.Sample{Data: make([]byte, 4096)}
+	encoded := EncodeSample(VideoTrack, sample)
+	encoded.Release()
+
+	allocations := testing.AllocsPerRun(100, func() {
+		encoded := EncodeSample(VideoTrack, sample)
+		encoded.Release()
+	})
+	if allocations != 0 {
+		t.Fatalf("allocations per encoding = %f", allocations)
 	}
 }
 
