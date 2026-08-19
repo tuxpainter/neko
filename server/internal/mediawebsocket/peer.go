@@ -1,21 +1,14 @@
 package mediawebsocket
 
 import (
-	"encoding/binary"
 	"errors"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 
+	"github.com/m1k1o/neko/server/internal/media"
 	"github.com/m1k1o/neko/server/pkg/types"
-)
-
-const (
-	protocolVersion  byte = 1
-	videoTrack       byte = 1
-	audioTrack       byte = 2
-	sampleHeaderSize      = 20
 )
 
 type peer struct {
@@ -27,17 +20,6 @@ type peer struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	wg        sync.WaitGroup
-}
-
-type mediaPeer interface {
-	WriteSample(byte, types.Sample)
-	SessionID() string
-	Close(error)
-	run()
-}
-
-type sampleWriter interface {
-	WriteSample(byte, types.Sample)
 }
 
 func newPeer(manager *Manager, connection *websocket.Conn, sessionID string) *peer {
@@ -55,7 +37,7 @@ func (peer *peer) SessionID() string {
 }
 
 func (peer *peer) WriteSample(track byte, sample types.Sample) {
-	message := encodeSample(track, sample)
+	message := media.EncodeSample(track, sample)
 	select {
 	case <-peer.done:
 		return
@@ -69,52 +51,6 @@ func (peer *peer) WriteSample(track byte, sample types.Sample) {
 	}
 }
 
-type trackConsumer struct {
-	peer    sampleWriter
-	track   byte
-	base    time.Duration
-	baseSet bool
-}
-
-func newTrackConsumer(peer sampleWriter, track byte) *trackConsumer {
-	return &trackConsumer{peer: peer, track: track}
-}
-
-func (consumer *trackConsumer) WriteSample(sample types.Sample) {
-	timestamp := sample.PTS
-	if timestamp < 0 {
-		timestamp = sample.DTS
-	}
-	if timestamp >= 0 {
-		if !consumer.baseSet {
-			consumer.base = timestamp
-			consumer.baseSet = true
-		}
-		sample.PTS = timestamp - consumer.base
-	}
-	consumer.peer.WriteSample(consumer.track, sample)
-}
-
-func encodeSample(track byte, sample types.Sample) []byte {
-	message := make([]byte, sampleHeaderSize+len(sample.Data))
-	message[0] = protocolVersion
-	message[1] = track
-	if !sample.DeltaUnit {
-		message[2] = 1
-	}
-	binary.BigEndian.PutUint64(message[4:12], uint64(durationMicroseconds(sample.PTS)))
-	binary.BigEndian.PutUint64(message[12:20], uint64(durationMicroseconds(sample.Duration)))
-	copy(message[sampleHeaderSize:], sample.Data)
-	return message
-}
-
-func durationMicroseconds(duration time.Duration) int64 {
-	if duration < 0 {
-		return -1
-	}
-	return duration.Microseconds()
-}
-
 func (peer *peer) Close(err error) {
 	peer.closeOnce.Do(func() {
 		close(peer.done)
@@ -125,7 +61,7 @@ func (peer *peer) Close(err error) {
 	})
 }
 
-func (peer *peer) run() {
+func (peer *peer) Run() {
 	peer.wg.Add(1)
 	go peer.write()
 

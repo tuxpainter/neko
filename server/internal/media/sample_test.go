@@ -1,4 +1,4 @@
-package mediawebsocket
+package media
 
 import (
 	"encoding/binary"
@@ -8,6 +8,14 @@ import (
 	"github.com/m1k1o/neko/server/pkg/types"
 )
 
+type sampleRecorder struct {
+	samples [][]byte
+}
+
+func (recorder *sampleRecorder) WriteSample(track byte, sample types.Sample) {
+	recorder.samples = append(recorder.samples, EncodeSample(track, sample))
+}
+
 func TestEncodeSample(t *testing.T) {
 	sample := types.Sample{
 		Data:      []byte{1, 2, 3},
@@ -16,11 +24,11 @@ func TestEncodeSample(t *testing.T) {
 		DeltaUnit: false,
 	}
 
-	message := encodeSample(videoTrack, sample)
-	if len(message) != sampleHeaderSize+len(sample.Data) {
+	message := EncodeSample(VideoTrack, sample)
+	if len(message) != SampleHeaderSize+len(sample.Data) {
 		t.Fatalf("message length = %d", len(message))
 	}
-	if message[0] != protocolVersion || message[1] != videoTrack || message[2] != 1 {
+	if message[0] != protocolVersion || message[1] != VideoTrack || message[2] != 1 {
 		t.Fatalf("header = %v", message[:4])
 	}
 	if got := int64(binary.BigEndian.Uint64(message[4:12])); got != 1234 {
@@ -30,24 +38,22 @@ func TestEncodeSample(t *testing.T) {
 		t.Fatalf("duration = %d", got)
 	}
 	for index, value := range sample.Data {
-		if message[sampleHeaderSize+index] != value {
-			t.Fatalf("payload = %v", message[sampleHeaderSize:])
+		if message[SampleHeaderSize+index] != value {
+			t.Fatalf("payload = %v", message[SampleHeaderSize:])
 		}
 	}
 }
 
 func TestTrackConsumerNormalizesTimestamps(t *testing.T) {
-	peer := &peer{samples: make(chan []byte, 2), done: make(chan struct{})}
-	consumer := newTrackConsumer(peer, audioTrack)
+	recorder := &sampleRecorder{}
+	consumer := newTrackConsumer(recorder, AudioTrack)
 	consumer.WriteSample(types.Sample{PTS: 5 * time.Second, Duration: 20 * time.Millisecond})
 	consumer.WriteSample(types.Sample{PTS: 5020 * time.Millisecond, Duration: 20 * time.Millisecond})
 
-	first := <-peer.samples
-	second := <-peer.samples
-	if got := int64(binary.BigEndian.Uint64(first[4:12])); got != 0 {
+	if got := int64(binary.BigEndian.Uint64(recorder.samples[0][4:12])); got != 0 {
 		t.Fatalf("first timestamp = %d", got)
 	}
-	if got := int64(binary.BigEndian.Uint64(second[4:12])); got != 20000 {
+	if got := int64(binary.BigEndian.Uint64(recorder.samples[1][4:12])); got != 20000 {
 		t.Fatalf("second timestamp = %d", got)
 	}
 }
