@@ -29,6 +29,17 @@ type peer struct {
 	wg        sync.WaitGroup
 }
 
+type mediaPeer interface {
+	WriteSample(byte, types.Sample)
+	SessionID() string
+	Close(error)
+	run()
+}
+
+type sampleWriter interface {
+	WriteSample(byte, types.Sample)
+}
+
 func newPeer(manager *Manager, connection *websocket.Conn, sessionID string) *peer {
 	return &peer{
 		manager:    manager,
@@ -37,6 +48,10 @@ func newPeer(manager *Manager, connection *websocket.Conn, sessionID string) *pe
 		samples:    make(chan []byte, 64),
 		done:       make(chan struct{}),
 	}
+}
+
+func (peer *peer) SessionID() string {
+	return peer.sessionID
 }
 
 func (peer *peer) WriteSample(track byte, sample types.Sample) {
@@ -55,13 +70,13 @@ func (peer *peer) WriteSample(track byte, sample types.Sample) {
 }
 
 type trackConsumer struct {
-	peer    *peer
+	peer    sampleWriter
 	track   byte
 	base    time.Duration
 	baseSet bool
 }
 
-func newTrackConsumer(peer *peer, track byte) *trackConsumer {
+func newTrackConsumer(peer sampleWriter, track byte) *trackConsumer {
 	return &trackConsumer{peer: peer, track: track}
 }
 

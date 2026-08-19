@@ -1,6 +1,7 @@
 import { EncodedMediaSample, parseMediaSample } from './media-protocol'
+import { MediaTransport } from './media-transport'
 
-export class MediaWebSocket {
+export class MediaWebSocket implements MediaTransport {
   private socket?: WebSocket
   private stopped = false
 

@@ -3,6 +3,7 @@ import EventEmitter from 'eventemitter3'
 import { BaseClient, BaseEvents } from './base'
 import { Member } from './types'
 import { EVENT } from './events'
+import { isWebCodecsMode } from './media-transport'
 import { accessor } from '~/store'
 
 import {
@@ -39,9 +40,8 @@ export class NekoClient extends BaseClient implements EventEmitter<NekoEvents> {
         : location.protocol.replace(/^http/, 'ws') + '//' + location.host + location.pathname.replace(/\/$/, '') + '/ws'
 
     const serverURL = new URL(url)
-    if (new URLSearchParams(location.search).get('media') === 'webcodecs-ws') {
-      serverURL.searchParams.set('media', 'webcodecs-ws')
-    }
+    const mediaMode = new URLSearchParams(location.search).get('media')
+    if (isWebCodecsMode(mediaMode)) serverURL.searchParams.set('media', mediaMode!)
 
     this.initWithURL(vue, serverURL.toString())
   }
@@ -151,7 +151,7 @@ export class NekoClient extends BaseClient implements EventEmitter<NekoEvents> {
     heartbeat_interval,
     media,
   }: SystemInitPayload) {
-    if (this._webCodecsWebSocketMode) {
+    if (this._webCodecsMode) {
       this._id = id
       this.onConnected()
     }

@@ -269,7 +269,7 @@ func (s *session) wsToClient(msg []byte) error {
 				VideoID string `json:"video_id"`
 			}{VideoID: "legacy"}, &ticket)
 			if err != nil {
-				s.logger.Debug().Err(err).Msg("media websocket is unavailable")
+				s.logger.Debug().Err(err).Msg("WebCodecs media transport is unavailable")
 			} else {
 				media = &oldMessage.Media{
 					URL:      path.Join(s.pathPrefix, "/media/ws") + "?ticket=" + url.QueryEscape(ticket.Ticket),
