@@ -39,8 +39,8 @@ export class NekoClient extends BaseClient implements EventEmitter<NekoEvents> {
         : location.protocol.replace(/^http/, 'ws') + '//' + location.host + location.pathname.replace(/\/$/, '') + '/ws'
 
     const serverURL = new URL(url)
-    if (new URLSearchParams(location.search).get('webcodecs') === '1') {
-      serverURL.searchParams.set('webcodecs', '1')
+    if (new URLSearchParams(location.search).get('media') === 'webcodecs') {
+      serverURL.searchParams.set('media', 'webcodecs')
     }
 
     this.initWithURL(vue, serverURL.toString())

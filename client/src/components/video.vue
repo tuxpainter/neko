@@ -305,7 +305,7 @@
     }
 
     get webCodecsRequested() {
-      return new URLSearchParams(location.search).get('webcodecs') === '1'
+      return new URLSearchParams(location.search).get('media') === 'webcodecs'
     }
 
     get playing() {

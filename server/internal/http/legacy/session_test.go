@@ -1,0 +1,21 @@
+package legacy
+
+import "testing"
+
+func TestParseMediaMode(t *testing.T) {
+	tests := []struct {
+		value string
+		want  mediaMode
+	}{
+		{value: "webcodecs", want: mediaModeWebCodecs},
+		{value: "webrtc", want: mediaModeWebRTC},
+		{value: "", want: mediaModeWebRTC},
+		{value: "unknown", want: mediaModeWebRTC},
+	}
+
+	for _, test := range tests {
+		if got := parseMediaMode(test.value); got != test.want {
+			t.Errorf("parseMediaMode(%q) = %q, want %q", test.value, got, test.want)
+		}
+	}
+}
