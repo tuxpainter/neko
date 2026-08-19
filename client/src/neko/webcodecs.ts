@@ -130,6 +130,7 @@ export class WebCodecsPlayer {
             timestamp: sample.timestamp,
             duration: sample.duration,
             data: sample.data,
+            transfer: [sample.data.buffer as ArrayBuffer],
           }),
         )
       } else {
@@ -143,6 +144,7 @@ export class WebCodecsPlayer {
             timestamp: sample.timestamp,
             duration: sample.duration,
             data: sample.data,
+            transfer: [sample.data.buffer as ArrayBuffer],
           }),
         )
       }
