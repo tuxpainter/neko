@@ -1,11 +1,9 @@
 import { MediaConfiguration } from './messages'
-
-const HEADER_SIZE = 20
-const VIDEO_TRACK = 1
-const AUDIO_TRACK = 2
+import { EncodedMediaSample } from './media-protocol'
+import { MediaWebSocket } from './media-websocket'
 
 export class WebCodecsPlayer {
-  private socket?: WebSocket
+  private transport?: MediaWebSocket
   private videoDecoder?: VideoDecoder
   private audioDecoder?: AudioDecoder
   private audioContext?: AudioContext
@@ -70,13 +68,8 @@ export class WebCodecsPlayer {
     window.addEventListener('pointerdown', this.activateAudio, true)
     window.addEventListener('keydown', this.activateAudio, true)
 
-    this.socket = new WebSocket(this.config.url)
-    this.socket.binaryType = 'arraybuffer'
-    this.socket.onmessage = ({ data }) => this.onMessage(data)
-    this.socket.onerror = () => this.fail(new Error('media websocket failed'))
-    this.socket.onclose = () => {
-      if (!this.stopped) this.fail(new Error('media websocket closed'))
-    }
+    this.transport = new MediaWebSocket(this.config.url, this.onSample, this.fail)
+    this.transport.start()
   }
 
   async setPlaying(playing: boolean) {
@@ -102,8 +95,8 @@ export class WebCodecsPlayer {
     this.stopped = true
     window.removeEventListener('pointerdown', this.activateAudio, true)
     window.removeEventListener('keydown', this.activateAudio, true)
-    this.socket?.close()
-    this.socket = undefined
+    this.transport?.stop()
+    this.transport = undefined
     try {
       this.videoDecoder?.close()
     } catch (_) {}
@@ -118,36 +111,30 @@ export class WebCodecsPlayer {
     this.audioContext = undefined
   }
 
-  private onMessage(data: unknown) {
-    if (!(data instanceof ArrayBuffer) || data.byteLength < HEADER_SIZE) {
-      this.fail(new Error('invalid media websocket message'))
-      return
-    }
-    const view = new DataView(data)
-    if (view.getUint8(0) !== 1) {
-      this.fail(new Error('unsupported media websocket protocol version'))
-      return
-    }
-    const track = view.getUint8(1)
-    const keyframe = (view.getUint8(2) & 1) !== 0
-    const timestamp = Number(view.getBigInt64(4))
-    const rawDuration = Number(view.getBigInt64(12))
-    const duration = rawDuration >= 0 ? rawDuration : undefined
-    const payload = new Uint8Array(data, HEADER_SIZE)
-
+  private onSample = (sample: EncodedMediaSample) => {
     try {
-      if (track === VIDEO_TRACK) {
-        if (!this.haveVideoKeyframe && !keyframe) return
-        if (keyframe) this.haveVideoKeyframe = true
-        if (!keyframe && (this.videoDecoder?.decodeQueueSize ?? 0) > 3) return
+      if (sample.track === 'video') {
+        if (!this.haveVideoKeyframe && !sample.keyframe) return
+        if (sample.keyframe) this.haveVideoKeyframe = true
+        if (!sample.keyframe && (this.videoDecoder?.decodeQueueSize ?? 0) > 3) return
         this.videoDecoder?.decode(
-          new EncodedVideoChunk({ type: keyframe ? 'key' : 'delta', timestamp, duration, data: payload }),
+          new EncodedVideoChunk({
+            type: sample.keyframe ? 'key' : 'delta',
+            timestamp: sample.timestamp,
+            duration: sample.duration,
+            data: sample.data,
+          }),
         )
-      } else if (track === AUDIO_TRACK) {
-        if ((this.audioDecoder?.decodeQueueSize ?? 0) > 8) return
-        this.audioDecoder?.decode(new EncodedAudioChunk({ type: 'key', timestamp, duration, data: payload }))
       } else {
-        throw new Error('unknown media track')
+        if ((this.audioDecoder?.decodeQueueSize ?? 0) > 8) return
+        this.audioDecoder?.decode(
+          new EncodedAudioChunk({
+            type: 'key',
+            timestamp: sample.timestamp,
+            duration: sample.duration,
+            data: sample.data,
+          }),
+        )
       }
     } catch (error) {
       this.fail(error instanceof Error ? error : new Error(String(error)))
