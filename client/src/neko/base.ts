@@ -23,7 +23,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   protected _ws_heartbeat?: number
   protected _peer?: RTCPeerConnection
   protected _channel?: RTCDataChannel
-  protected _webCodecsMode = false
+  protected _webCodecsWebSocketMode = false
   private _pendingMove?: { x: number; y: number }
   private _moveFrame?: number
   protected _timeout?: number
@@ -41,7 +41,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
 
   get supported() {
     return (
-      new URLSearchParams(location.search).get('media') === 'webcodecs' ||
+      new URLSearchParams(location.search).get('media') === 'webcodecs-ws' ||
       (typeof RTCPeerConnection !== 'undefined' && typeof RTCPeerConnection.prototype.addTransceiver !== 'undefined')
     )
   }
@@ -55,7 +55,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   }
 
   get connected() {
-    return this.socketOpen && (this._webCodecsMode || this.peerConnected)
+    return this.socketOpen && (this._webCodecsWebSocketMode || this.peerConnected)
   }
 
   public connect(url: string, password: string, displayname: string) {
@@ -64,7 +64,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
       return
     }
 
-    this._webCodecsMode = new URL(url).searchParams.get('media') === 'webcodecs'
+    this._webCodecsWebSocketMode = new URL(url).searchParams.get('media') === 'webcodecs-ws'
     if (!this.supported) {
       this.onDisconnected(new Error('browser does not support webrtc (RTCPeerConnection missing)'))
       return
@@ -200,7 +200,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
       return
     }
 
-    if (this._webCodecsMode) {
+    if (this._webCodecsWebSocketMode) {
       switch (event) {
         case 'mousemove':
           this._pendingMove = { x: data.x, y: data.y }

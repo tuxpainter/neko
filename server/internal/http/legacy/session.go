@@ -78,13 +78,13 @@ func (h *LegacyHandler) newSession(r *http.Request) *session {
 type mediaMode string
 
 const (
-	mediaModeWebRTC    mediaMode = "webrtc"
-	mediaModeWebCodecs mediaMode = "webcodecs"
+	mediaModeWebRTC      mediaMode = "webrtc"
+	mediaModeWebCodecsWS mediaMode = "webcodecs-ws"
 )
 
 func parseMediaMode(value string) mediaMode {
-	if mediaMode(value) == mediaModeWebCodecs {
-		return mediaModeWebCodecs
+	if mediaMode(value) == mediaModeWebCodecsWS {
+		return mediaModeWebCodecsWS
 	}
 	return mediaModeWebRTC
 }

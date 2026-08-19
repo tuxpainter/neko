@@ -132,7 +132,7 @@ func (manager *Manager) createTicket(w http.ResponseWriter, request *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(ticketResponse{
-		Ticket: token, Protocol: "webcodecs-v1", Video: videoConfig, Audio: audioConfig,
+		Ticket: token, Protocol: "webcodecs-ws-v1", Video: videoConfig, Audio: audioConfig,
 	})
 }
 

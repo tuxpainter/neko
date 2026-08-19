@@ -90,7 +90,7 @@ export interface ControlKeyPayload {
 
 export interface MediaConfiguration {
   url: string
-  protocol: 'webcodecs-v1'
+  protocol: 'webcodecs-ws-v1'
   video: MediaCodecConfiguration
   audio: MediaCodecConfiguration & {
     sample_rate: number
