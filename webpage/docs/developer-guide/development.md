@@ -38,6 +38,15 @@ cd server/dev
 
 This starts the neko backend inside Docker and exposes it on port **3000**. The container is named `neko_server_dev` and is kept running in the foreground.
 
+To test WebTransport, start the backend with local TLS enabled:
+
+```bash
+cd server/dev
+NEKO_TLS=1 ./start
+```
+
+The script uses OpenSSL to create a short-lived ECDSA localhost certificate under the ignored `server/dev/runtime/certs/` directory. It writes the certificate hash and an IPv4 WebTransport host override to the ignored `client/.env` file so local frontend builds can authenticate WebTransport without Web PKI. Import `server/dev/runtime/certs/neko-dev-ca.pem` as a trusted certificate authority, or open `https://localhost:3000` once and accept the certificate warning, so HTTPS and WebSocket connections are also allowed. Backend port 3000 is exposed over TCP for HTTPS and WebSocket traffic and UDP for HTTP/3 and WebTransport.
+
 You can pass `nvidia` or `intel` as an argument to enable GPU acceleration:
 
 ```bash
@@ -85,6 +94,17 @@ cd client/dev
 ```
 
 This starts the Vue dev server on port **3001**, proxying API calls to the backend on port **3000**. Any change you save to a file under `client/src/` is reflected in the browser instantly - no page reload required.
+
+When the backend uses local TLS, start the frontend with secure backend connections:
+
+```bash
+cd client/dev
+VUE_APP_SERVER_TLS=true ./serve
+```
+
+Open `http://localhost:3001/?media=webcodecs-wt` to use WebTransport media. The Vue development page remains on port 3001; WebSocket, API, and WebTransport connections go directly to the TLS-enabled backend on port 3000.
+
+Restart the frontend after regenerating the backend certificate so Vue reloads the certificate hash from `client/.env`.
 
 | Service | URL |
 |---------|-----|

@@ -5,7 +5,12 @@ if [ -z $VUE_APP_SERVER_PORT ]; then
     VUE_APP_SERVER_PORT="3000"
 fi
 
+if [ -z $VUE_APP_SERVER_TLS ]; then
+    VUE_APP_SERVER_TLS="false"
+fi
+
 echo "Using VUE_APP_SERVER_PORT: ${VUE_APP_SERVER_PORT}"
+echo "Using VUE_APP_SERVER_TLS: ${VUE_APP_SERVER_TLS}"
 
 # use -i to install
 if [ ! -d "${PWD}/../node_modules" ] || [ "$1" == "-i" ]; then
@@ -20,6 +25,7 @@ fi
 docker run --rm -it \
     -p 3001:3001 \
     -e "VUE_APP_SERVER_PORT=$VUE_APP_SERVER_PORT" \
+    -e "VUE_APP_SERVER_TLS=$VUE_APP_SERVER_TLS" \
     --user "$(id -u):$(id -g)" \
     --volume "${PWD}/../:/app" \
     --entrypoint="npm" \
