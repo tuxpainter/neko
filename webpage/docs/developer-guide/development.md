@@ -95,21 +95,21 @@ cd client/dev
 
 This starts the Vue dev server on port **3001**, proxying API calls to the backend on port **3000**. Any change you save to a file under `client/src/` is reflected in the browser instantly - no page reload required.
 
-When the backend uses local TLS, start the frontend with secure backend connections:
+When the backend uses local TLS, start the frontend with secure backend connections and HTTPS hosting:
 
 ```bash
 cd client/dev
 VUE_APP_SERVER_TLS=true ./serve
 ```
 
-Open `http://localhost:3001/?media=webcodecs-wt` to use WebTransport media. The Vue development page remains on port 3001; WebSocket, API, and WebTransport connections go directly to the TLS-enabled backend on port 3000.
+Open `https://localhost:3001/?media=webcodecs-wt` to use WebTransport media. The Vue development server reuses the generated localhost certificate so the page is a secure context. WebSocket, API, and WebTransport connections go directly to the TLS-enabled backend on port 3000.
 
 Restart the frontend after regenerating the backend certificate so Vue reloads the certificate hash from `client/.env`.
 
 | Service | URL |
 |---------|-----|
 | Backend (Docker) | `http://localhost:3000` |
-| Frontend (hot reload) | `http://localhost:3001` |
+| Frontend (hot reload) | `http://localhost:3001`, or `https://localhost:3001` with TLS |
 
 ## Typical workflow
 
