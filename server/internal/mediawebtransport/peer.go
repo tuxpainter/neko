@@ -20,8 +20,8 @@ type peer struct {
 	session   *webtransport.Session
 	sessionID string
 
-	videoSamples chan *media.EncodedSample
-	audioSamples chan *media.EncodedSample
+	videoSamples chan *sampleRecord
+	audioSamples chan *sampleRecord
 	done         chan struct{}
 	closeOnce    sync.Once
 	wg           sync.WaitGroup
@@ -29,13 +29,35 @@ type peer struct {
 
 const sampleQueueSize = 32
 
+var sampleRecordPool sync.Pool
+
+type sampleRecord struct {
+	header  media.SampleHeader
+	payload []byte
+}
+
+func newSampleRecord(track byte, sample types.Sample) *sampleRecord {
+	record, _ := sampleRecordPool.Get().(*sampleRecord)
+	if record == nil {
+		record = &sampleRecord{}
+	}
+	media.EncodeSampleHeader(&record.header, track, sample)
+	record.payload = sample.Data
+	return record
+}
+
+func (record *sampleRecord) release() {
+	record.payload = nil
+	sampleRecordPool.Put(record)
+}
+
 func newPeer(manager *Manager, session *webtransport.Session, sessionID string) *peer {
 	return &peer{
 		manager:      manager,
 		session:      session,
 		sessionID:    sessionID,
-		videoSamples: make(chan *media.EncodedSample, sampleQueueSize),
-		audioSamples: make(chan *media.EncodedSample, sampleQueueSize),
+		videoSamples: make(chan *sampleRecord, sampleQueueSize),
+		audioSamples: make(chan *sampleRecord, sampleQueueSize),
 		done:         make(chan struct{}),
 	}
 }
@@ -45,29 +67,28 @@ func (peer *peer) SessionID() string {
 }
 
 func (peer *peer) WriteSample(track byte, sample types.Sample) {
-	message := media.EncodeSample(track, sample)
-	var samples chan *media.EncodedSample
+	var samples chan *sampleRecord
 	switch track {
 	case media.VideoTrack:
 		samples = peer.videoSamples
 	case media.AudioTrack:
 		samples = peer.audioSamples
 	default:
-		message.Release()
 		peer.Close(errors.New("unknown media track"))
 		return
 	}
+	record := newSampleRecord(track, sample)
 	select {
 	case <-peer.done:
-		message.Release()
+		record.release()
 		return
 	default:
 	}
 
 	select {
-	case samples <- message:
+	case samples <- record:
 	default:
-		message.Release()
+		record.release()
 		peer.Close(errors.New("media webtransport client is too slow"))
 	}
 }
@@ -95,7 +116,7 @@ func (peer *peer) Run() {
 	peer.wg.Wait()
 }
 
-func (peer *peer) write(samples chan *media.EncodedSample) {
+func (peer *peer) write(samples chan *sampleRecord) {
 	defer peer.wg.Done()
 	defer peer.releaseSamples(samples)
 
@@ -113,41 +134,47 @@ func (peer *peer) write(samples chan *media.EncodedSample) {
 		select {
 		case <-peer.done:
 			return
-		case sample := <-samples:
+		case record := <-samples:
 			_ = stream.SetWriteDeadline(time.Now().Add(5 * time.Second))
-			if err := writeRecord(stream, &recordHeader, sample.Data); err != nil {
-				sample.Release()
+			if err := writeRecord(stream, &recordHeader, record); err != nil {
+				record.release()
 				peer.Close(err)
 				return
 			}
-			sample.Release()
+			record.release()
 		}
 	}
 }
 
-func writeRecord(writer io.Writer, header *[4]byte, sample []byte) error {
-	if len(sample) > math.MaxUint32 {
+func writeRecord(writer io.Writer, recordHeader *[4]byte, record *sampleRecord) error {
+	size := len(record.header) + len(record.payload)
+	if size > math.MaxUint32 {
 		return errors.New("media sample exceeds framing limit")
 	}
-	binary.BigEndian.PutUint32(header[:], uint32(len(sample)))
-	if written, err := writer.Write(header[:]); err != nil {
+	binary.BigEndian.PutUint32(recordHeader[:], uint32(size))
+	if written, err := writer.Write(recordHeader[:]); err != nil {
 		return err
-	} else if written != len(header) {
+	} else if written != len(recordHeader) {
 		return io.ErrShortWrite
 	}
-	if written, err := writer.Write(sample); err != nil {
+	if written, err := writer.Write(record.header[:]); err != nil {
 		return err
-	} else if written != len(sample) {
+	} else if written != len(record.header) {
+		return io.ErrShortWrite
+	}
+	if written, err := writer.Write(record.payload); err != nil {
+		return err
+	} else if written != len(record.payload) {
 		return io.ErrShortWrite
 	}
 	return nil
 }
 
-func (peer *peer) releaseSamples(samples chan *media.EncodedSample) {
+func (peer *peer) releaseSamples(samples chan *sampleRecord) {
 	for {
 		select {
-		case sample := <-samples:
-			sample.Release()
+		case record := <-samples:
+			record.release()
 		default:
 			return
 		}

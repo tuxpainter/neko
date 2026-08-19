@@ -72,43 +72,38 @@ export class MediaWebTransport implements MediaTransport {
   }
 
   private async readStream(stream: ReadableStream<Uint8Array>) {
-    const reader = stream.getReader()
-    let chunk: Uint8Array | undefined
-    let chunkOffset = 0
+    const reader = stream.getReader({ mode: 'byob' })
 
-    const readInto = async (target: Uint8Array, allowEnd: boolean): Promise<boolean> => {
+    const readInto = async (buffer: ArrayBuffer, allowEnd: boolean): Promise<ArrayBuffer | undefined> => {
+      const size = buffer.byteLength
       let offset = 0
-      while (offset < target.byteLength) {
-        if (!chunk || chunkOffset === chunk.byteLength) {
-          const result = await reader.read()
-          if (result.done) {
-            if (allowEnd && offset === 0) return false
-            throw new Error('media WebTransport stream ended during a record')
-          }
-          chunk = result.value
-          chunkOffset = 0
-          if (chunk.byteLength === 0) continue
+      while (offset < size) {
+        const { value, done } = await reader.read(new Uint8Array(buffer, offset, size - offset))
+        if (value) {
+          buffer = value.buffer as ArrayBuffer
+          offset += value.byteLength
         }
-
-        const length = Math.min(target.byteLength - offset, chunk.byteLength - chunkOffset)
-        target.set(chunk.subarray(chunkOffset, chunkOffset + length), offset)
-        offset += length
-        chunkOffset += length
+        if (done) {
+          if (allowEnd && offset === 0) return undefined
+          if (offset !== size) throw new Error('media WebTransport stream ended during a record')
+        }
       }
-      return true
+      return buffer
     }
 
-    const recordHeader = new Uint8Array(RECORD_HEADER_SIZE)
-    const recordHeaderView = new DataView(recordHeader.buffer)
+    let recordHeader = new ArrayBuffer(RECORD_HEADER_SIZE)
     try {
-      while (!this.stopped && (await readInto(recordHeader, true))) {
-        const size = recordHeaderView.getUint32(0)
+      while (!this.stopped) {
+        const header = await readInto(recordHeader, true)
+        if (!header) return
+        recordHeader = header
+        const size = new DataView(recordHeader).getUint32(0)
         if (size < SAMPLE_HEADER_SIZE) throw new Error('media sample is smaller than its header')
         if (size > MAX_SAMPLE_SIZE) throw new Error('media sample exceeds size limit')
 
-        const sample = new Uint8Array(size)
-        await readInto(sample, false)
-        this.onSample(parseMediaSample(sample.buffer))
+        const sample = await readInto(new ArrayBuffer(size), false)
+        if (!sample) throw new Error('media WebTransport stream ended during a record')
+        this.onSample(parseMediaSample(sample))
       }
     } finally {
       reader.releaseLock()
