@@ -3,7 +3,7 @@
     <div ref="player" class="player">
       <div ref="container" class="player-container">
         <neko-video-webcodecs
-          v-if="webCodecsRequested"
+          v-if="webCodecsWebSocketRequested"
           ref="rendererWebCodecs"
           :media="media"
           :playing="playing"
@@ -328,8 +328,8 @@
       return this.$accessor.video.media
     }
 
-    get webCodecsRequested() {
-      return new URLSearchParams(location.search).get('media') === 'webcodecs'
+    get webCodecsWebSocketRequested() {
+      return new URLSearchParams(location.search).get('media') === 'webcodecs-ws'
     }
 
     get playing() {
@@ -367,7 +367,10 @@
 
     get pip_available() {
       //@ts-ignore
-      return !this.webCodecsRequested && typeof document.createElement('video').requestPictureInPicture === 'function'
+      return (
+        !this.webCodecsWebSocketRequested &&
+        typeof document.createElement('video').requestPictureInPicture === 'function'
+      )
     }
 
     get clipboard_read_available() {
@@ -533,7 +536,7 @@
     }
 
     async play() {
-      if (this.webCodecsRequested) {
+      if (this.webCodecsWebSocketRequested) {
         this.$accessor.video.play()
         return
       }
@@ -548,7 +551,7 @@
     }
 
     pause() {
-      if (this.webCodecsRequested) {
+      if (this.webCodecsWebSocketRequested) {
         this.$accessor.video.pause()
         return
       }
@@ -596,7 +599,9 @@
       }
 
       // fallback to fullscreen video itself (on mobile devices)
-      const element = this.webCodecsRequested ? this._rendererWebCodecs?.element : this._rendererWebRTC?.element
+      const element = this.webCodecsWebSocketRequested
+        ? this._rendererWebCodecs?.element
+        : this._rendererWebRTC?.element
       if (element && elementRequestFullscreen(element)) {
         this.onResize()
         return

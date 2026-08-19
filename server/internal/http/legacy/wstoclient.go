@@ -258,7 +258,7 @@ func (s *session) wsToClient(msg []byte) error {
 		}
 
 		var media *oldMessage.Media
-		if s.media == mediaModeWebCodecs {
+		if s.media == mediaModeWebCodecsWS {
 			var ticket struct {
 				Ticket   string                `json:"ticket"`
 				Protocol string                `json:"protocol"`

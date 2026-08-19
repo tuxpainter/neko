@@ -26,7 +26,7 @@ export class WebCodecsPlayer {
 
   static async supported(config: MediaConfiguration) {
     if (
-      config.protocol !== 'webcodecs-v1' ||
+      config.protocol !== 'webcodecs-ws-v1' ||
       typeof VideoDecoder === 'undefined' ||
       typeof AudioDecoder === 'undefined'
     ) {
