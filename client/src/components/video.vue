@@ -2,7 +2,8 @@
   <div ref="component" class="video">
     <div ref="player" class="player">
       <div ref="container" class="player-container">
-        <video ref="video" playsinline />
+        <video v-show="!webCodecsRequested" ref="video" playsinline />
+        <canvas v-show="webCodecsRequested" ref="canvas" />
         <div class="emotes">
           <template v-for="(emote, index) in emotes">
             <neko-emote :id="index" :key="index" />
@@ -146,7 +147,8 @@
         width: 100%;
         max-width: calc(16 / 9 * 100vh);
 
-        video {
+        video,
+        canvas {
           position: absolute;
           top: 0;
           bottom: 0;
@@ -214,6 +216,7 @@
   import { Component, Ref, Watch, Vue, Prop } from 'vue-property-decorator'
   import ResizeObserver from 'resize-observer-polyfill'
   import { elementRequestFullscreen, onFullscreenChange, isFullscreen, lockKeyboard, unlockKeyboard } from '~/utils'
+  import { WebCodecsPlayer } from '~/neko/webcodecs'
 
   import Emote from './emote.vue'
   import Resolution from './resolution.vue'
@@ -239,6 +242,7 @@
     @Ref('aspect') readonly _aspect!: HTMLElement
     @Ref('player') readonly _player!: HTMLElement
     @Ref('video') readonly _video!: HTMLVideoElement
+    @Ref('canvas') readonly _canvas!: HTMLCanvasElement
     @Ref('resolution') readonly _resolution!: Resolution
     @Ref('clipboard') readonly _clipboard!: Clipboard
 
@@ -253,6 +257,8 @@
     private fullscreen = false
     private mutedOverlay = true
     private lastTextAreaValue = ''
+    private webCodecsPlayer?: WebCodecsPlayer
+    private webCodecsStarting = false
 
     get admin() {
       return this.$accessor.user.admin
@@ -294,6 +300,14 @@
       return this.$accessor.video.stream
     }
 
+    get media() {
+      return this.$accessor.video.media
+    }
+
+    get webCodecsRequested() {
+      return new URLSearchParams(location.search).get('webcodecs') === '1'
+    }
+
     get playing() {
       return this.$accessor.video.playing
     }
@@ -329,7 +343,7 @@
 
     get pip_available() {
       //@ts-ignore
-      return typeof document.createElement('video').requestPictureInPicture === 'function'
+      return !this.webCodecsRequested && typeof document.createElement('video').requestPictureInPicture === 'function'
     }
 
     get clipboard_read_available() {
@@ -399,6 +413,7 @@
       if (this._video && this._video.volume != volume) {
         this._video.volume = volume
       }
+      this.webCodecsPlayer?.setVolume(volume)
     }
 
     @Watch('muted')
@@ -410,11 +425,12 @@
           this.mutedOverlay = false
         }
       }
+      this.webCodecsPlayer?.setMuted(muted)
     }
 
     @Watch('stream')
     onStreamChanged(stream?: MediaStream) {
-      if (!this._video || !stream) {
+      if (!this._video || !stream || this.webCodecsRequested) {
         return
       }
 
@@ -426,8 +442,55 @@
       }
     }
 
+    @Watch('media')
+    async onMediaChanged() {
+      if (!this.media) {
+        this.webCodecsPlayer?.stop()
+        this.webCodecsPlayer = undefined
+        return
+      }
+      if (!this.webCodecsRequested || this.webCodecsPlayer || this.webCodecsStarting) return
+
+      this.webCodecsStarting = true
+      const player = new WebCodecsPlayer(
+        this._canvas,
+        this.media,
+        () => {
+          this.$accessor.video.setPlayable(true)
+          if (this.autoplay) this.$nextTick(() => this.$accessor.video.play())
+        },
+        (error) => {
+          this.$log.error(error)
+          if (this.webCodecsPlayer === player) this.webCodecsPlayer = undefined
+          this.$accessor.video.setPlayable(false)
+        },
+      )
+      player.setVolume(this.volume / 100)
+      player.setMuted(this.muted)
+      this.webCodecsPlayer = player
+      try {
+        await player.start()
+      } catch (error: any) {
+        player.stop()
+        if (this.webCodecsPlayer === player) this.webCodecsPlayer = undefined
+        this.$log.error(error)
+        this.$accessor.video.setPlayable(false)
+      } finally {
+        this.webCodecsStarting = false
+      }
+    }
+
     @Watch('playing')
     async onPlayingChanged(playing: boolean) {
+      if (this.webCodecsRequested) {
+        try {
+          await this.webCodecsPlayer?.setPlaying(playing)
+        } catch (error: any) {
+          this.$log.error(error)
+          this.$accessor.video.pause()
+        }
+        return
+      }
       if (this._video && this._video.paused && playing) {
         // if autoplay is disabled, play() will throw an error
         // and we need to properly save the state otherwise we
@@ -474,6 +537,7 @@
       this.onVolumeChanged(this.volume)
       this.onMutedChanged(this.muted)
       this.onStreamChanged(this.stream)
+      this.onMediaChanged()
       this.onResize()
 
       this.observer.observe(this._component)
@@ -485,6 +549,7 @@
       })
 
       this._video.addEventListener('canplaythrough', () => {
+        if (this.webCodecsRequested) return
         this.$accessor.video.setPlayable(true)
         if (this.autoplay) {
           this.$nextTick(() => {
@@ -494,24 +559,29 @@
       })
 
       this._video.addEventListener('ended', () => {
+        if (this.webCodecsRequested) return
         this.$accessor.video.setPlayable(false)
       })
 
       this._video.addEventListener('error', (event) => {
+        if (this.webCodecsRequested) return
         this.$log.error(event.error)
         this.$accessor.video.setPlayable(false)
       })
 
       this._video.addEventListener('volumechange', () => {
+        if (this.webCodecsRequested) return
         this.$accessor.video.setMuted(this._video.muted)
         this.$accessor.video.setVolume(this._video.volume * 100)
       })
 
       this._video.addEventListener('playing', () => {
+        if (this.webCodecsRequested) return
         this.$accessor.video.play()
       })
 
       this._video.addEventListener('pause', () => {
+        if (this.webCodecsRequested) return
         this.$accessor.video.pause()
       })
 
@@ -536,6 +606,8 @@
     }
 
     beforeDestroy() {
+      this.webCodecsPlayer?.stop()
+      this.webCodecsPlayer = undefined
       window.removeEventListener('focus', this._onWindowFocus)
       this.observer.disconnect()
       this.$accessor.video.setPlayable(false)
@@ -588,6 +660,10 @@
     }
 
     async play() {
+      if (this.webCodecsRequested) {
+        this.$accessor.video.play()
+        return
+      }
       if (!this._video.paused || !this.playable) {
         return
       }
@@ -601,6 +677,10 @@
     }
 
     pause() {
+      if (this.webCodecsRequested) {
+        this.$accessor.video.pause()
+        return
+      }
       if (this._video.paused || !this.playable) {
         return
       }
@@ -649,7 +729,7 @@
       }
 
       // fallback to fullscreen video itself (on mobile devices)
-      if (elementRequestFullscreen(this._video)) {
+      if (elementRequestFullscreen(this.webCodecsRequested ? this._canvas : this._video)) {
         this.onResize()
         return
       }
