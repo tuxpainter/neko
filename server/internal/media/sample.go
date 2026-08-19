@@ -20,6 +20,8 @@ const (
 
 var sampleBufferPools [sampleBufferPoolCount]sync.Pool
 
+type SampleHeader [SampleHeaderSize]byte
+
 type EncodedSample struct {
 	Data      []byte
 	poolIndex int
@@ -67,17 +69,20 @@ func EncodeSample(track byte, sample types.Sample) *EncodedSample {
 	}
 	message.Data = message.Data[:size]
 	message.poolIndex = poolIndex
-	clear(message.Data[:SampleHeaderSize])
-
-	message.Data[0] = protocolVersion
-	message.Data[1] = track
-	if !sample.DeltaUnit {
-		message.Data[2] = 1
-	}
-	binary.BigEndian.PutUint64(message.Data[4:12], uint64(durationMicroseconds(sample.PTS)))
-	binary.BigEndian.PutUint64(message.Data[12:20], uint64(durationMicroseconds(sample.Duration)))
+	EncodeSampleHeader((*SampleHeader)(message.Data), track, sample)
 	copy(message.Data[SampleHeaderSize:], sample.Data)
 	return message
+}
+
+func EncodeSampleHeader(header *SampleHeader, track byte, sample types.Sample) {
+	clear(header[:])
+	header[0] = protocolVersion
+	header[1] = track
+	if !sample.DeltaUnit {
+		header[2] = 1
+	}
+	binary.BigEndian.PutUint64(header[4:12], uint64(durationMicroseconds(sample.PTS)))
+	binary.BigEndian.PutUint64(header[12:20], uint64(durationMicroseconds(sample.Duration)))
 }
 
 func (sample *EncodedSample) Release() {
