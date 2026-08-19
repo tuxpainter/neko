@@ -38,11 +38,12 @@ type session struct {
 	serverAddr string
 	pathPrefix string
 
-	id, ip  string
-	token   string
-	name    string
-	isAdmin bool
-	client  *http.Client
+	id, ip    string
+	token     string
+	name      string
+	isAdmin   bool
+	webCodecs bool
+	client    *http.Client
 
 	lastHostID         string
 	lockedControls     bool
@@ -69,7 +70,8 @@ func (h *LegacyHandler) newSession(r *http.Request) *session {
 		client: &http.Client{
 			Transport: transport,
 		},
-		sessions: make(map[string]*memberStruct),
+		sessions:  make(map[string]*memberStruct),
+		webCodecs: r.URL.Query().Get("webcodecs") == "1",
 	}
 }
 

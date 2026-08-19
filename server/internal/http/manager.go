@@ -23,7 +23,7 @@ type HttpManagerCtx struct {
 	http   *http.Server
 }
 
-func New(WebSocketManager types.WebSocketManager, ApiManager types.ApiManager, config *config.Server) *HttpManagerCtx {
+func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager types.MediaWebSocketManager, ApiManager types.ApiManager, config *config.Server) *HttpManagerCtx {
 	logger := log.With().Str("module", "http").Logger()
 
 	opts := []RouterOption{
@@ -54,6 +54,9 @@ func New(WebSocketManager types.WebSocketManager, ApiManager types.ApiManager, c
 	router.Route("/api", ApiManager.Route)
 
 	router.Get("/api/ws", WebSocketManager.Upgrade(func(r *http.Request) bool {
+		return config.AllowOrigin(r.Header.Get("Origin"))
+	}))
+	router.Get("/media/ws", MediaWebSocketManager.Upgrade(func(r *http.Request) bool {
 		return config.AllowOrigin(r.Header.Get("Origin"))
 	}))
 
