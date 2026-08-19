@@ -13,6 +13,7 @@ import (
 
 	"github.com/m1k1o/neko/server/internal/config"
 	"github.com/m1k1o/neko/server/internal/http/legacy"
+	"github.com/m1k1o/neko/server/internal/mediawebsocket"
 	"github.com/m1k1o/neko/server/pkg/types"
 )
 
@@ -23,7 +24,7 @@ type HttpManagerCtx struct {
 	http   *http.Server
 }
 
-func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager types.MediaWebSocketManager, ApiManager types.ApiManager, config *config.Server) *HttpManagerCtx {
+func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager *mediawebsocket.Manager, ApiManager types.ApiManager, config *config.Server) *HttpManagerCtx {
 	logger := log.With().Str("module", "http").Logger()
 
 	opts := []RouterOption{
