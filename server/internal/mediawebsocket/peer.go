@@ -16,7 +16,7 @@ type peer struct {
 	connection *websocket.Conn
 	sessionID  string
 
-	samples   chan []byte
+	samples   chan *media.EncodedSample
 	done      chan struct{}
 	closeOnce sync.Once
 	wg        sync.WaitGroup
@@ -27,7 +27,7 @@ func newPeer(manager *Manager, connection *websocket.Conn, sessionID string) *pe
 		manager:    manager,
 		connection: connection,
 		sessionID:  sessionID,
-		samples:    make(chan []byte, 64),
+		samples:    make(chan *media.EncodedSample, 64),
 		done:       make(chan struct{}),
 	}
 }
@@ -40,6 +40,7 @@ func (peer *peer) WriteSample(track byte, sample types.Sample) {
 	message := media.EncodeSample(track, sample)
 	select {
 	case <-peer.done:
+		message.Release()
 		return
 	default:
 	}
@@ -47,6 +48,7 @@ func (peer *peer) WriteSample(track byte, sample types.Sample) {
 	select {
 	case peer.samples <- message:
 	default:
+		message.Release()
 		peer.Close(errors.New("media websocket client is too slow"))
 	}
 }
@@ -76,6 +78,7 @@ func (peer *peer) Run() {
 
 func (peer *peer) write() {
 	defer peer.wg.Done()
+	defer peer.releaseSamples()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
@@ -84,7 +87,9 @@ func (peer *peer) write() {
 		case <-peer.done:
 			return
 		case sample := <-peer.samples:
-			if err := peer.connection.WriteMessage(websocket.BinaryMessage, sample); err != nil {
+			err := peer.connection.WriteMessage(websocket.BinaryMessage, sample.Data)
+			sample.Release()
+			if err != nil {
 				peer.Close(err)
 				return
 			}
@@ -93,6 +98,17 @@ func (peer *peer) write() {
 				peer.Close(err)
 				return
 			}
+		}
+	}
+}
+
+func (peer *peer) releaseSamples() {
+	for {
+		select {
+		case sample := <-peer.samples:
+			sample.Release()
+		default:
+			return
 		}
 	}
 }
