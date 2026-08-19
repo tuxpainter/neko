@@ -1,9 +1,10 @@
 import { MediaConfiguration } from './messages'
 import { EncodedMediaSample } from './media-protocol'
+import { MediaTransport } from './media-transport'
 import { MediaWebSocket } from './media-websocket'
 
 export class WebCodecsPlayer {
-  private transport?: MediaWebSocket
+  private transport?: MediaTransport
   private videoDecoder?: VideoDecoder
   private audioDecoder?: AudioDecoder
   private audioContext?: AudioContext
@@ -69,7 +70,7 @@ export class WebCodecsPlayer {
     window.addEventListener('keydown', this.activateAudio, true)
 
     this.transport = new MediaWebSocket(this.config.url, this.onSample, this.fail)
-    this.transport.start()
+    await this.transport.start()
   }
 
   async setPlaying(playing: boolean) {

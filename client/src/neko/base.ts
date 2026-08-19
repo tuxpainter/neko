@@ -1,6 +1,7 @@
 import EventEmitter from 'eventemitter3'
 import { OPCODE } from './data'
 import { EVENT, WebSocketEvents } from './events'
+import { isWebCodecsMode } from './media-transport'
 
 import {
   WebSocketMessages,
@@ -23,7 +24,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   protected _ws_heartbeat?: number
   protected _peer?: RTCPeerConnection
   protected _channel?: RTCDataChannel
-  protected _webCodecsWebSocketMode = false
+  protected _webCodecsMode = false
   private _pendingMove?: { x: number; y: number }
   private _moveFrame?: number
   protected _timeout?: number
@@ -40,8 +41,9 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   }
 
   get supported() {
+    const mediaMode = new URLSearchParams(location.search).get('media')
     return (
-      new URLSearchParams(location.search).get('media') === 'webcodecs-ws' ||
+      isWebCodecsMode(mediaMode) ||
       (typeof RTCPeerConnection !== 'undefined' && typeof RTCPeerConnection.prototype.addTransceiver !== 'undefined')
     )
   }
@@ -55,7 +57,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   }
 
   get connected() {
-    return this.socketOpen && (this._webCodecsWebSocketMode || this.peerConnected)
+    return this.socketOpen && (this._webCodecsMode || this.peerConnected)
   }
 
   public connect(url: string, password: string, displayname: string) {
@@ -64,7 +66,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
       return
     }
 
-    this._webCodecsWebSocketMode = new URL(url).searchParams.get('media') === 'webcodecs-ws'
+    this._webCodecsMode = isWebCodecsMode(new URL(url).searchParams.get('media'))
     if (!this.supported) {
       this.onDisconnected(new Error('browser does not support webrtc (RTCPeerConnection missing)'))
       return
@@ -200,7 +202,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
       return
     }
 
-    if (this._webCodecsWebSocketMode) {
+    if (this._webCodecsMode) {
       switch (event) {
         case 'mousemove':
           this._pendingMove = { x: data.x, y: data.y }

@@ -33,17 +33,17 @@ type Manager struct {
 
 	mu      sync.Mutex
 	tickets map[string]ticket
-	peers   map[*peer]struct{}
+	peers   map[mediaPeer]struct{}
 	closed  bool
 }
 
 func New(sessions types.SessionManager, media types.EncodedMediaSource) *Manager {
 	manager := &Manager{
-		logger:   log.With().Str("module", "media-websocket").Logger(),
+		logger:   log.With().Str("module", "media").Logger(),
 		sessions: sessions,
 		media:    media,
 		tickets:  map[string]ticket{},
-		peers:    map[*peer]struct{}{},
+		peers:    map[mediaPeer]struct{}{},
 	}
 
 	sessions.OnDeleted(func(session types.Session) {
@@ -119,7 +119,7 @@ func (manager *Manager) createTicket(w http.ResponseWriter, request *http.Reques
 	manager.mu.Lock()
 	if manager.closed {
 		manager.mu.Unlock()
-		return utils.HttpError(http.StatusServiceUnavailable, "media websocket is shutting down")
+		return utils.HttpError(http.StatusServiceUnavailable, "media transport is shutting down")
 	}
 	now := time.Now()
 	for token, ticket := range manager.tickets {
@@ -181,33 +181,36 @@ func (manager *Manager) Upgrade(checkOrigin types.CheckOrigin) types.RouterHandl
 		if err != nil {
 			return err
 		}
-		peer := newPeer(manager, connection, session.ID())
-		if !manager.addPeer(peer) {
-			return nil
-		}
-		defer manager.removePeer(peer)
-
-		video, audio, _, _, err := manager.resolve(ticket.videoID)
-		if err != nil {
-			peer.Close(err)
-			return nil
-		}
-		audioSubscription, err := audio.Subscribe(newTrackConsumer(peer, audioTrack))
-		if err != nil {
-			peer.Close(err)
-			return nil
-		}
-		defer audioSubscription.Close()
-		videoSubscription, err := video.Subscribe(newTrackConsumer(peer, videoTrack))
-		if err != nil {
-			peer.Close(err)
-			return nil
-		}
-		defer videoSubscription.Close()
-
-		peer.run()
+		manager.servePeer(ticket, newPeer(manager, connection, session.ID()))
 		return nil
 	}
+}
+
+func (manager *Manager) servePeer(ticket ticket, peer mediaPeer) {
+	if !manager.addPeer(peer) {
+		return
+	}
+	defer manager.removePeer(peer)
+
+	video, audio, _, _, err := manager.resolve(ticket.videoID)
+	if err != nil {
+		peer.Close(err)
+		return
+	}
+	audioSubscription, err := audio.Subscribe(newTrackConsumer(peer, audioTrack))
+	if err != nil {
+		peer.Close(err)
+		return
+	}
+	defer audioSubscription.Close()
+	videoSubscription, err := video.Subscribe(newTrackConsumer(peer, videoTrack))
+	if err != nil {
+		peer.Close(err)
+		return
+	}
+	defer videoSubscription.Close()
+
+	peer.run()
 }
 
 func (manager *Manager) consumeTicket(token string) (ticket, types.Session, error) {
@@ -218,7 +221,7 @@ func (manager *Manager) consumeTicket(token string) (ticket, types.Session, erro
 	manager.mu.Unlock()
 
 	if closed {
-		return ticket, nil, errors.New("media websocket is shutting down")
+		return ticket, nil, errors.New("media transport is shutting down")
 	}
 	if !ok || token == "" || time.Now().After(ticket.expires) {
 		return ticket, nil, errors.New("invalid or expired media ticket")
@@ -230,18 +233,18 @@ func (manager *Manager) consumeTicket(token string) (ticket, types.Session, erro
 	return ticket, session, nil
 }
 
-func (manager *Manager) addPeer(peer *peer) bool {
+func (manager *Manager) addPeer(peer mediaPeer) bool {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if manager.closed {
-		peer.Close(errors.New("media websocket is shutting down"))
+		peer.Close(errors.New("media transport is shutting down"))
 		return false
 	}
 	manager.peers[peer] = struct{}{}
 	return true
 }
 
-func (manager *Manager) removePeer(peer *peer) {
+func (manager *Manager) removePeer(peer mediaPeer) {
 	peer.Close(nil)
 	manager.mu.Lock()
 	delete(manager.peers, peer)
@@ -250,9 +253,9 @@ func (manager *Manager) removePeer(peer *peer) {
 
 func (manager *Manager) closeSession(sessionID string, err error) {
 	manager.mu.Lock()
-	peers := make([]*peer, 0)
+	peers := make([]mediaPeer, 0)
 	for peer := range manager.peers {
-		if peer.sessionID == sessionID {
+		if peer.SessionID() == sessionID {
 			peers = append(peers, peer)
 		}
 	}
@@ -269,7 +272,7 @@ func (manager *Manager) Shutdown() error {
 		return nil
 	}
 	manager.closed = true
-	peers := make([]*peer, 0, len(manager.peers))
+	peers := make([]mediaPeer, 0, len(manager.peers))
 	for peer := range manager.peers {
 		peers = append(peers, peer)
 	}
@@ -277,7 +280,7 @@ func (manager *Manager) Shutdown() error {
 	manager.mu.Unlock()
 
 	for _, peer := range peers {
-		peer.Close(errors.New("media websocket is shutting down"))
+		peer.Close(errors.New("media transport is shutting down"))
 	}
 	return nil
 }

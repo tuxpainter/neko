@@ -12,11 +12,11 @@ export interface EncodedMediaSample {
 }
 
 export function parseMediaSample(data: ArrayBuffer): EncodedMediaSample {
-  if (data.byteLength < HEADER_SIZE) throw new Error('invalid media websocket message')
+  if (data.byteLength < HEADER_SIZE) throw new Error('invalid media transport message')
 
   const view = new DataView(data)
   if (view.getUint8(0) !== PROTOCOL_VERSION) {
-    throw new Error('unsupported media websocket protocol version')
+    throw new Error('unsupported media transport protocol version')
   }
 
   const trackID = view.getUint8(1)

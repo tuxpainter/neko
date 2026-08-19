@@ -3,7 +3,7 @@
     <div ref="player" class="player">
       <div ref="container" class="player-container">
         <neko-video-webcodecs
-          v-if="webCodecsWebSocketRequested"
+          v-if="webCodecsRequested"
           ref="rendererWebCodecs"
           :media="media"
           :playing="playing"
@@ -239,6 +239,7 @@
   import { Component, Ref, Watch, Vue, Prop } from 'vue-property-decorator'
   import ResizeObserver from 'resize-observer-polyfill'
   import { elementRequestFullscreen, onFullscreenChange, isFullscreen, lockKeyboard, unlockKeyboard } from '~/utils'
+  import { isWebCodecsMode } from '~/neko/media-transport'
 
   import Emote from './emote.vue'
   import Resolution from './resolution.vue'
@@ -328,8 +329,8 @@
       return this.$accessor.video.media
     }
 
-    get webCodecsWebSocketRequested() {
-      return new URLSearchParams(location.search).get('media') === 'webcodecs-ws'
+    get webCodecsRequested() {
+      return isWebCodecsMode(new URLSearchParams(location.search).get('media'))
     }
 
     get playing() {
@@ -367,10 +368,7 @@
 
     get pip_available() {
       //@ts-ignore
-      return (
-        !this.webCodecsWebSocketRequested &&
-        typeof document.createElement('video').requestPictureInPicture === 'function'
-      )
+      return !this.webCodecsRequested && typeof document.createElement('video').requestPictureInPicture === 'function'
     }
 
     get clipboard_read_available() {
@@ -536,7 +534,7 @@
     }
 
     async play() {
-      if (this.webCodecsWebSocketRequested) {
+      if (this.webCodecsRequested) {
         this.$accessor.video.play()
         return
       }
@@ -551,7 +549,7 @@
     }
 
     pause() {
-      if (this.webCodecsWebSocketRequested) {
+      if (this.webCodecsRequested) {
         this.$accessor.video.pause()
         return
       }
@@ -599,9 +597,7 @@
       }
 
       // fallback to fullscreen video itself (on mobile devices)
-      const element = this.webCodecsWebSocketRequested
-        ? this._rendererWebCodecs?.element
-        : this._rendererWebRTC?.element
+      const element = this.webCodecsRequested ? this._rendererWebCodecs?.element : this._rendererWebRTC?.element
       if (element && elementRequestFullscreen(element)) {
         this.onResize()
         return
