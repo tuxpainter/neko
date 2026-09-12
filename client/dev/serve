@@ -5,7 +5,27 @@ if [ -z $VUE_APP_SERVER_PORT ]; then
     VUE_APP_SERVER_PORT="3000"
 fi
 
+if [ -z $VUE_APP_SERVER_TLS ]; then
+    VUE_APP_SERVER_TLS="false"
+fi
+
 echo "Using VUE_APP_SERVER_PORT: ${VUE_APP_SERVER_PORT}"
+echo "Using VUE_APP_SERVER_TLS: ${VUE_APP_SERVER_TLS}"
+
+TLS_OPTS=()
+if [ "$VUE_APP_SERVER_TLS" = "true" ]; then
+    CERT_DIR="${PWD}/../../server/dev/runtime/certs"
+    if [ ! -f "$CERT_DIR/localhost.pem" ] || [ ! -f "$CERT_DIR/localhost-key.pem" ]; then
+        echo "Development TLS certificates are missing. Run server/dev/cert first."
+        exit 1
+    fi
+    TLS_OPTS=(
+        --volume "$CERT_DIR:/tls:ro"
+        -e "NEKO_CLIENT_TLS_CERT=/tls/localhost.pem"
+        -e "NEKO_CLIENT_TLS_KEY=/tls/localhost-key.pem"
+    )
+    echo "Frontend HTTPS enabled"
+fi
 
 # use -i to install
 if [ ! -d "${PWD}/../node_modules" ] || [ "$1" == "-i" ]; then
@@ -20,6 +40,8 @@ fi
 docker run --rm -it \
     -p 3001:3001 \
     -e "VUE_APP_SERVER_PORT=$VUE_APP_SERVER_PORT" \
+    -e "VUE_APP_SERVER_TLS=$VUE_APP_SERVER_TLS" \
+    "${TLS_OPTS[@]}" \
     --user "$(id -u):$(id -g)" \
     --volume "${PWD}/../:/app" \
     --entrypoint="npm" \

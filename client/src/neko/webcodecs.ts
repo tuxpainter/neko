@@ -2,6 +2,7 @@ import { MediaConfiguration } from './messages'
 import { EncodedMediaSample } from './media-protocol'
 import { MediaTransport } from './media-transport'
 import { MediaWebSocket } from './media-websocket'
+import { MediaWebTransport } from './media-webtransport'
 
 const MAX_VIDEO_DECODE_QUEUE_SIZE = 4
 const MAX_AUDIO_DECODE_QUEUE_SIZE = 9
@@ -30,9 +31,10 @@ export class WebCodecsPlayer {
 
   static async supported(config: MediaConfiguration) {
     if (
-      config.protocol !== 'webcodecs-ws-v1' ||
+      !['webcodecs-ws-v1', 'webcodecs-wt-v1'].includes(config.protocol) ||
       typeof VideoDecoder === 'undefined' ||
-      typeof AudioDecoder === 'undefined'
+      typeof AudioDecoder === 'undefined' ||
+      (config.protocol === 'webcodecs-wt-v1' && typeof WebTransport === 'undefined')
     ) {
       return false
     }
@@ -72,7 +74,10 @@ export class WebCodecsPlayer {
     window.addEventListener('pointerdown', this.activateAudio, true)
     window.addEventListener('keydown', this.activateAudio, true)
 
-    this.transport = new MediaWebSocket(this.config.url, this.onSample, this.fail)
+    this.transport =
+      this.config.protocol === 'webcodecs-wt-v1'
+        ? new MediaWebTransport(this.config.url, this.onSample, this.fail)
+        : new MediaWebSocket(this.config.url, this.onSample, this.fail)
     await this.transport.start()
   }
 
