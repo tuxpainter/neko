@@ -121,8 +121,11 @@ func (h *LegacyHandler) Route(r types.Router) {
 		defer connBackend.Close()
 		s.connBackend = connBackend
 
-		// request signal
-		if err = s.toBackend(event.SIGNAL_REQUEST, message.SignalRequest{}); err != nil {
+		// WebCodecs carries media and the existing WebSocket carries controls, so no WebRTC peer is needed.
+		if s.media == mediaModeWebRTC {
+			err = s.toBackend(event.SIGNAL_REQUEST, message.SignalRequest{})
+		}
+		if err != nil {
 			h.logger.Error().Err(err).Msg("couldn't request signal")
 
 			s.toClient(&oldMessage.SystemMessage{

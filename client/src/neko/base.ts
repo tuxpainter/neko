@@ -1,6 +1,7 @@
 import EventEmitter from 'eventemitter3'
 import { OPCODE } from './data'
 import { EVENT, WebSocketEvents } from './events'
+import { isWebCodecsMode } from './media-transport'
 
 import {
   WebSocketMessages,
@@ -23,6 +24,9 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   protected _ws_heartbeat?: number
   protected _peer?: RTCPeerConnection
   protected _channel?: RTCDataChannel
+  protected _webCodecsMode = false
+  private _pendingMove?: { x: number; y: number }
+  private _moveFrame?: number
   protected _timeout?: number
   protected _displayname?: string
   protected _state: RTCIceConnectionState = 'disconnected'
@@ -37,7 +41,11 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   }
 
   get supported() {
-    return typeof RTCPeerConnection !== 'undefined' && typeof RTCPeerConnection.prototype.addTransceiver !== 'undefined'
+    const mediaMode = new URLSearchParams(location.search).get('media')
+    return (
+      isWebCodecsMode(mediaMode) ||
+      (typeof RTCPeerConnection !== 'undefined' && typeof RTCPeerConnection.prototype.addTransceiver !== 'undefined')
+    )
   }
 
   get socketOpen() {
@@ -49,7 +57,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   }
 
   get connected() {
-    return this.peerConnected && this.socketOpen
+    return this.socketOpen && (this._webCodecsMode || this.peerConnected)
   }
 
   public connect(url: string, password: string, displayname: string) {
@@ -58,6 +66,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
       return
     }
 
+    this._webCodecsMode = isWebCodecsMode(new URL(url).searchParams.get('media'))
     if (!this.supported) {
       this.onDisconnected(new Error('browser does not support webrtc (RTCPeerConnection missing)'))
       return
@@ -67,13 +76,14 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
     this[EVENT.CONNECTING]()
 
     try {
-      this._ws = new WebSocket(
-        `${url}?password=${encodeURIComponent(password)}&username=${encodeURIComponent(displayname)}`,
-      )
+      const socketURL = new URL(url)
+      socketURL.searchParams.set('password', password)
+      socketURL.searchParams.set('username', displayname)
+      this._ws = new WebSocket(socketURL)
       this.emit('debug', `connecting to ${this._ws.url}`)
       this._ws.onmessage = this.onMessage.bind(this)
-      this._ws.onerror = () => this.onError.bind(this)
-      this._ws.onclose = () => this.onDisconnected.bind(this, new Error('websocket closed'))
+      this._ws.onerror = this.onError.bind(this)
+      this._ws.onclose = () => this.onDisconnected(new Error('websocket closed'))
       this._timeout = window.setTimeout(this.onTimeout.bind(this), 15000)
     } catch (err: any) {
       this.onDisconnected(err)
@@ -190,6 +200,36 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
     if (!this.connected) {
       this.emit('warn', `attempting to send data while disconnected`)
       return
+    }
+
+    if (this._webCodecsMode) {
+      switch (event) {
+        case 'mousemove':
+          this._pendingMove = { x: data.x, y: data.y }
+          if (this._moveFrame === undefined) {
+            this._moveFrame = requestAnimationFrame(() => {
+              if (this._pendingMove) this.sendMessage(EVENT.CONTROL.MOVE, this._pendingMove)
+              this._pendingMove = undefined
+              this._moveFrame = undefined
+            })
+          }
+          return
+        case 'wheel':
+          this.sendMessage(EVENT.CONTROL.SCROLL, { x: data.x, y: data.y })
+          return
+        case 'mousedown':
+          this.sendMessage(EVENT.CONTROL.BUTTONDOWN, { code: data.key })
+          return
+        case 'mouseup':
+          this.sendMessage(EVENT.CONTROL.BUTTONUP, { code: data.key })
+          return
+        case 'keydown':
+          this.sendMessage(EVENT.CONTROL.KEYDOWN, { keysym: data.key })
+          return
+        case 'keyup':
+          this.sendMessage(EVENT.CONTROL.KEYUP, { keysym: data.key })
+          return
+      }
     }
 
     let buffer: ArrayBuffer
@@ -453,7 +493,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
     this.emit('error', (event as ErrorEvent).error)
   }
 
-  private onConnected() {
+  protected onConnected() {
     if (this._timeout) {
       clearTimeout(this._timeout)
       this._timeout = undefined
