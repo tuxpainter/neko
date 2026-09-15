@@ -12,6 +12,7 @@ type Router interface {
 	Group(fn func(Router))
 	Route(pattern string, fn func(Router))
 	Get(pattern string, fn RouterHandler)
+	Head(pattern string, fn RouterHandler)
 	Post(pattern string, fn RouterHandler)
 	Put(pattern string, fn RouterHandler)
 	Patch(pattern string, fn RouterHandler)

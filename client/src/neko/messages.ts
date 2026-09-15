@@ -67,6 +67,7 @@ export interface SystemInitPayload {
   locks: Record<string, string>
   file_transfer: boolean
   heartbeat_interval: number
+  api_token?: string
   media?: MediaConfiguration
 }
 

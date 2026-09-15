@@ -24,7 +24,7 @@ type HttpManagerCtx struct {
 	http   *http.Server
 }
 
-func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager *mediawebsocket.Manager, ApiManager types.ApiManager, config *config.Server) *HttpManagerCtx {
+func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager *mediawebsocket.Manager, ApiManager types.ApiManager, config *config.Server, extraRoutes ...func(types.Router)) *HttpManagerCtx {
 	logger := log.With().Str("module", "http").Logger()
 
 	opts := []RouterOption{
@@ -51,6 +51,9 @@ func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager *mediawe
 	}
 
 	router := newRouter(opts...)
+	for _, route := range extraRoutes {
+		route(router)
+	}
 
 	router.Route("/api", ApiManager.Route)
 

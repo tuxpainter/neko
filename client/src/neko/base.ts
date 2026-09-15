@@ -445,7 +445,9 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   private async onMessage(e: MessageEvent) {
     const { event, ...payload } = JSON.parse(e.data) as WebSocketMessages
 
-    this.emit('debug', `received websocket event ${event} ${payload ? `with payload: ` : ''}`, payload)
+    const debugPayload = { ...payload }
+    if ('api_token' in debugPayload) debugPayload.api_token = '[redacted]'
+    this.emit('debug', `received websocket event ${event} ${payload ? `with payload: ` : ''}`, debugPayload)
 
     if (event === EVENT.SIGNAL.PROVIDE) {
       const { sdp, lite, ice, id } = payload as SignalProvidePayload

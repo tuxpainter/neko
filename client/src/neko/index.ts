@@ -150,11 +150,13 @@ export class NekoClient extends BaseClient implements EventEmitter<NekoEvents> {
     file_transfer,
     heartbeat_interval,
     media,
+    api_token,
   }: SystemInitPayload) {
     if (this._webCodecsMode) {
       this._id = id
       this.onConnected()
     }
+    this.$accessor.user.setApiToken(api_token || '')
     this.$accessor.remote.setImplicitHosting(implicit_hosting)
     this.$accessor.remote.setFileTransfer(file_transfer)
 

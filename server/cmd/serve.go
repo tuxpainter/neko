@@ -13,6 +13,7 @@ import (
 	"github.com/m1k1o/neko/server/internal/capture"
 	"github.com/m1k1o/neko/server/internal/config"
 	"github.com/m1k1o/neko/server/internal/desktop"
+	"github.com/m1k1o/neko/server/internal/hls"
 	"github.com/m1k1o/neko/server/internal/http"
 	"github.com/m1k1o/neko/server/internal/media"
 	"github.com/m1k1o/neko/server/internal/mediawebsocket"
@@ -57,6 +58,7 @@ type serve struct {
 	managers struct {
 		desktop        *desktop.DesktopManagerCtx
 		capture        *capture.CaptureManagerCtx
+		hls            *hls.Manager
 		webRTC         *webrtc.WebRTCManagerCtx
 		member         *member.MemberManagerCtx
 		session        *session.SessionManagerCtx
@@ -164,6 +166,10 @@ func (c *serve) Start(cmd *cobra.Command) {
 	)
 	c.managers.capture.Start()
 
+	c.managers.hls = hls.New(c.managers.session, &c.configs.Capture, c.configs.Server.PathPrefix)
+	c.managers.desktop.OnBeforeScreenSizeChange(c.managers.hls.BeforeScreenSizeChange)
+	c.managers.desktop.OnAfterScreenSizeChange(c.managers.hls.AfterScreenSizeChange)
+
 	c.managers.webRTC = webrtc.New(
 		c.managers.desktop,
 		c.managers.capture,
@@ -185,6 +191,7 @@ func (c *serve) Start(cmd *cobra.Command) {
 		c.managers.desktop,
 		c.managers.capture,
 	)
+	c.managers.api.AddRouter("/hls", c.managers.hls.Route)
 
 	c.managers.media = media.New(
 		c.managers.session,
@@ -213,6 +220,7 @@ func (c *serve) Start(cmd *cobra.Command) {
 		c.managers.mediaWebSocket,
 		c.managers.api,
 		&c.configs.Server,
+		c.managers.hls.RoutePlayback,
 	)
 	c.managers.http.Start()
 }
@@ -222,6 +230,7 @@ func (c *serve) Shutdown() {
 
 	err = c.managers.http.Shutdown()
 	c.logger.Err(err).Msg("http manager shutdown")
+	c.managers.hls.Shutdown()
 
 	err = c.managers.plugins.Shutdown()
 	c.logger.Err(err).Msg("plugins manager shutdown")

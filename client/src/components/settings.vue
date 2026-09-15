@@ -68,6 +68,7 @@
           placeholder="rtmp://a.rtmp.youtube.com/live2/<stream-key>"
         />
       </li>
+      <neko-hls-output v-if="admin" />
       <li v-if="connected">
         <button @click.stop.prevent="logout">{{ $t('logout') }}</button>
       </li>
@@ -312,8 +313,9 @@
 
 <script lang="ts">
   import { Component, Watch, Vue } from 'vue-property-decorator'
+  import HlsOutput from './hls-output.vue'
 
-  @Component({ name: 'neko-settings' })
+  @Component({ name: 'neko-settings', components: { 'neko-hls-output': HlsOutput } })
   export default class extends Vue {
     private broadcast_url: string = ''
 

@@ -13,6 +13,7 @@ interface Members {
 
 export const state = () => ({
   id: '',
+  api_token: '',
   members: {} as Members,
 })
 
@@ -23,6 +24,9 @@ export const getters = getterTree(state, {
 })
 
 export const mutations = mutationTree(state, {
+  setApiToken(state, api_token: string) {
+    state.api_token = api_token
+  },
   setIgnored(state, { id, ignored }: { id: string; ignored: boolean }) {
     state.members[id] = {
       ...state.members[id],
@@ -66,6 +70,7 @@ export const mutations = mutationTree(state, {
     }
   },
   reset(state) {
+    state.api_token = ''
     state.members = {}
   },
 })

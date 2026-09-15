@@ -3,6 +3,7 @@ package http
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -38,7 +39,12 @@ func (l *logFormatter) NewLogEntry(r *http.Request) middleware.LogEntry {
 	req["method"] = r.Method
 	req["remote"] = r.RemoteAddr
 	req["agent"] = r.UserAgent()
-	req["uri"] = fmt.Sprintf("%s://%s%s", scheme, r.Host, r.RequestURI)
+	uri := r.RequestURI
+	// HLS playback URLs contain bearer credentials, including with a path prefix.
+	if index := strings.Index(r.URL.Path, "/hls/"); index >= 0 {
+		uri = r.URL.Path[:index] + "/hls/[redacted]"
+	}
+	req["uri"] = fmt.Sprintf("%s://%s%s", scheme, r.Host, uri)
 
 	return &logEntry{
 		logger: l.logger.With().Interface("req", req).Logger(),

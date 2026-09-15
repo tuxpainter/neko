@@ -92,6 +92,28 @@ export const setting = {
   chat_sound: 'Play Chat Sound',
   keyboard_layout: 'Keyboard Layout',
   broadcast_title: 'Live Broadcast',
+  hls: {
+    title: 'HLS Stream Output',
+    quality: 'Video quality',
+    '480p': '480p30 (~1.5 Mbps)',
+    '720p': '720p30 (~3 Mbps)',
+    '1080p': '1080p30 (~6 Mbps)',
+    ready: 'Ready',
+    starting: 'Starting',
+    inactive: 'Inactive',
+    create: 'Create stream',
+    recreate: 'Recreate link',
+    copy: 'Copy URL',
+    revoke: 'Revoke',
+    description: 'Create a quality-configured H264/AAC stream for HLS players.',
+    help: 'AAC 128 kbps. Anyone with the bearer URL can watch. Use HTTPS and Allow Untrusted URLs for VRChat. No WebRTC is required, and buffering may continue briefly after revoking.',
+    recreate_confirm: 'Recreate the HLS link? Existing viewers will lose access.',
+    revoke_confirm: 'Revoke the HLS stream and stop the encoder?',
+    forbidden: 'HLS output is unavailable in private mode for this account.',
+    load_error: 'Could not load HLS status.',
+    action_error: 'HLS operation failed.',
+    copy_fallback: 'URL selected. Copy it manually.',
+  },
 }
 
 export const connection = {

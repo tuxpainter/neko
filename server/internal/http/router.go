@@ -90,6 +90,10 @@ func (r *router) Get(pattern string, fn types.RouterHandler) {
 	r.chi.Get(pattern, routeHandler(fn))
 }
 
+func (r *router) Head(pattern string, fn types.RouterHandler) {
+	r.chi.Head(pattern, routeHandler(fn))
+}
+
 func (r *router) Post(pattern string, fn types.RouterHandler) {
 	r.chi.Post(pattern, routeHandler(fn))
 }

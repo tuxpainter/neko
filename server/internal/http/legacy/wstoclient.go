@@ -280,9 +280,14 @@ func (s *session) wsToClient(msg []byte) error {
 			}
 		}
 
+		apiToken := ""
+		if s.isAdmin {
+			apiToken = s.token
+		}
 		return s.toClient(&oldMessage.SystemInit{
 			Event:           oldEvent.SYSTEM_INIT,
 			ID:              s.id,
+			APIToken:        apiToken,
 			ImplicitHosting: request.Settings.ImplicitHosting,
 			Locks:           locks,
 			// TODO: hack - we don't know if file transfer is enabled, we would need to check the global config.
