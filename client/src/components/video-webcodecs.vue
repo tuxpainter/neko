@@ -46,12 +46,12 @@
           this.$emit('error', error)
         },
       )
-      player.setVolume(this.volume / 100)
-      player.setMuted(this.muted)
-      await player.setPlaying(this.playing)
       this.player = player
 
       try {
+        player.setVolume(this.volume / 100)
+        player.setMuted(this.muted)
+        await player.setPlaying(this.playing)
         await player.start()
         if (generation !== this.generation) player.stop()
       } catch (error) {

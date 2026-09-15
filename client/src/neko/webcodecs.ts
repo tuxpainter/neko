@@ -55,6 +55,7 @@ export class WebCodecsPlayer {
     if (!(await WebCodecsPlayer.supported(this.config))) {
       throw new Error('browser does not support the configured WebCodecs streams')
     }
+    if (this.stopped) return
 
     this.videoDecoder = new VideoDecoder({ output: this.onVideoFrame, error: this.fail })
     this.videoDecoder.configure({
@@ -79,19 +80,20 @@ export class WebCodecsPlayer {
   async setPlaying(playing: boolean) {
     this.playing = playing
     this.audioCursor = 0
-    if (playing && this.audioContext) {
-      await this.audioContext?.resume()
-    }
+    // Do not await resume: autoplay policy can leave it pending until a gesture.
+    if (playing) this.activateAudio()
   }
 
   setVolume(volume: number) {
     this.volume = volume
     this.updateGain()
+    if (this.playing && !this.muted && volume > 0) this.activateAudio()
   }
 
   setMuted(muted: boolean) {
     this.muted = muted
     this.updateGain()
+    if (this.playing && !muted) this.activateAudio()
   }
 
   stop() {
@@ -204,10 +206,9 @@ export class WebCodecsPlayer {
   }
 
   private activateAudio = () => {
+    if (this.stopped) return
     this.ensureAudio()
-    void this.audioContext?.resume()
-    window.removeEventListener('pointerdown', this.activateAudio, true)
-    window.removeEventListener('keydown', this.activateAudio, true)
+    if (this.audioContext?.state !== 'running') void this.audioContext?.resume().catch(this.fail)
   }
 
   private fail = (error: Error | DOMException) => {
