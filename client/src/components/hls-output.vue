@@ -14,7 +14,13 @@
     </div>
     <p class="description">{{ $t('setting.hls.description') }}</p>
     <label class="quality-label" for="hls-quality">{{ $t('setting.hls.quality') }}</label>
-    <select id="hls-quality" v-model="quality" :disabled="busy" aria-describedby="hls-description">
+    <select
+      id="hls-quality"
+      v-model="quality"
+      :disabled="busy"
+      aria-describedby="hls-description"
+      @change="qualityEdited = true"
+    >
       <option value="480p">{{ $t('setting.hls.480p') }}</option>
       <option value="720p">{{ $t('setting.hls.720p') }}</option>
       <option value="1080p">{{ $t('setting.hls.1080p') }}</option>
@@ -120,6 +126,8 @@
     busy = false
     error = ''
     timer: number | null = null
+    requestVersion = 0
+    qualityEdited = false
 
     get apiToken(): string {
       return this.$accessor.user.api_token
@@ -141,18 +149,23 @@
     }
     beforeDestroy() {
       if (this.timer !== null) window.clearInterval(this.timer)
+      this.requestVersion++
     }
 
     async refresh() {
       if (this.busy || !this.apiToken || !this.$accessor.connected) return
+      const version = ++this.requestVersion
       try {
         const response = await this.$http.get<HlsStatus>('api/hls/', {
           headers: { Authorization: `Bearer ${this.apiToken}` },
         })
+        if (version !== this.requestVersion) return
         this.status = response.data
+        if (!this.qualityEdited) this.quality = response.data.quality
         if (response.data.message) this.error = response.data.message
         else this.error = ''
       } catch (error) {
+        if (version !== this.requestVersion) return
         const status = error && (error as any).response && (error as any).response.status
         if (status === 403) this.error = this.$t('setting.hls.forbidden').toString()
         else if (status !== 401) this.error = this.$t('setting.hls.load_error').toString()
@@ -168,30 +181,35 @@
     async revoke() {
       if (!window.confirm(this.$t('setting.hls.revoke_confirm').toString())) return
       this.busy = true
+      const version = ++this.requestVersion
       try {
         const response = await this.$http.delete<HlsStatus>('api/hls/', {
           headers: { Authorization: `Bearer ${this.apiToken}` },
         })
+        if (version !== this.requestVersion) return
         this.status = response.data
         this.error = response.data.message || ''
-      } catch (_) {
-        this.error = this.$t('setting.hls.action_error').toString()
+      } catch (error) {
+        if (version === this.requestVersion) this.error = this.actionError(error)
       } finally {
         this.busy = false
       }
     }
     async change() {
       this.busy = true
+      const version = ++this.requestVersion
       try {
         const response = await this.$http.post<HlsStatus>(
           'api/hls/',
           { quality: this.quality },
           { headers: { Authorization: `Bearer ${this.apiToken}` } },
         )
+        if (version !== this.requestVersion) return
         this.status = response.data
+        this.qualityEdited = false
         this.error = response.data.message || ''
-      } catch (_) {
-        this.error = this.$t('setting.hls.action_error').toString()
+      } catch (error) {
+        if (version === this.requestVersion) this.error = this.actionError(error)
       } finally {
         this.busy = false
       }
@@ -207,8 +225,14 @@
       }
     }
 
+    actionError(error: any): string {
+      return error?.response?.data?.message || this.$t('setting.hls.action_error').toString()
+    }
+
     @Watch('apiToken')
     onApiTokenChange(token: string) {
+      this.requestVersion++
+      this.status = { is_active: false, quality: '720p', ready: false }
       if (token) this.refresh()
     }
   }
