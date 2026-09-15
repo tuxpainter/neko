@@ -812,6 +812,7 @@
 
     // stable reference for add/removeEventListener
     private _onWindowFocus = () => {
+      this.onFocus()
       if (this.hosting) this.syncClipboard()
     }
 

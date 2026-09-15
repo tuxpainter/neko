@@ -26,7 +26,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   protected _channel?: RTCDataChannel
   protected _webCodecsMode = false
   private _pendingMove?: { x: number; y: number }
-  private _moveFrame?: number
+  private _moveTimer?: number
   protected _timeout?: number
   protected _displayname?: string
   protected _state: RTCIceConnectionState = 'disconnected'
@@ -91,6 +91,10 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   }
 
   protected disconnect() {
+    window.clearTimeout(this._moveTimer)
+    this._moveTimer = undefined
+    this._pendingMove = undefined
+
     if (this._timeout) {
       clearTimeout(this._timeout)
       this._timeout = undefined
@@ -206,21 +210,21 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
       switch (event) {
         case 'mousemove':
           this._pendingMove = { x: data.x, y: data.y }
-          if (this._moveFrame === undefined) {
-            this._moveFrame = requestAnimationFrame(() => {
-              if (this._pendingMove) this.sendMessage(EVENT.CONTROL.MOVE, this._pendingMove)
-              this._pendingMove = undefined
-              this._moveFrame = undefined
-            })
+          if (this._moveTimer === undefined) {
+            // Keep input independent of rendering, which browsers can suspend.
+            this._moveTimer = window.setTimeout(this.flushMouseMove, 16)
           }
           return
         case 'wheel':
+          this.flushMouseMove()
           this.sendMessage(EVENT.CONTROL.SCROLL, { x: data.x, y: data.y })
           return
         case 'mousedown':
+          this.flushMouseMove()
           this.sendMessage(EVENT.CONTROL.BUTTONDOWN, { code: data.key })
           return
         case 'mouseup':
+          this.flushMouseMove()
           this.sendMessage(EVENT.CONTROL.BUTTONUP, { code: data.key })
           return
         case 'keydown':
@@ -275,6 +279,14 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
     if (typeof buffer !== 'undefined') {
       this._channel!.send(buffer)
     }
+  }
+
+  private flushMouseMove = () => {
+    const move = this._pendingMove
+    window.clearTimeout(this._moveTimer)
+    this._moveTimer = undefined
+    this._pendingMove = undefined
+    if (move) this.sendMessage(EVENT.CONTROL.MOVE, move)
   }
 
   public sendMessage(event: WebSocketEvents, payload?: WebSocketPayloads) {
