@@ -2,29 +2,39 @@ package http
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"net"
 	"net/http"
 	"os"
+	"path"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
+	webtransport "github.com/quic-go/webtransport-go"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 
 	"github.com/m1k1o/neko/server/internal/config"
 	"github.com/m1k1o/neko/server/internal/http/legacy"
+	"github.com/m1k1o/neko/server/internal/media"
 	"github.com/m1k1o/neko/server/internal/mediawebsocket"
+	"github.com/m1k1o/neko/server/internal/mediawebtransport"
 	"github.com/m1k1o/neko/server/pkg/types"
 )
 
 type HttpManagerCtx struct {
-	logger zerolog.Logger
-	config *config.Server
-	router types.Router
-	http   *http.Server
+	logger       zerolog.Logger
+	config       *config.Server
+	router       types.Router
+	http         *http.Server
+	webTransport *webtransport.Server
 }
 
-func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager *mediawebsocket.Manager, ApiManager types.ApiManager, config *config.Server) *HttpManagerCtx {
+func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager *mediawebsocket.Manager, MediaManager *media.Manager, ApiManager types.ApiManager, config *config.Server) *HttpManagerCtx {
 	logger := log.With().Str("module", "http").Logger()
 
 	opts := []RouterOption{
@@ -103,7 +113,7 @@ func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager *mediawe
 		pprofHandler(router)
 	}
 
-	return &HttpManagerCtx{
+	manager := &HttpManagerCtx{
 		logger: logger,
 		config: config,
 		router: router,
@@ -112,6 +122,31 @@ func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager *mediawe
 			Handler: router,
 		},
 	}
+	manager.webTransport = newMediaWebTransport(config, MediaManager)
+	return manager
+}
+
+func newMediaWebTransport(config *config.Server, manager *media.Manager) *webtransport.Server {
+	if config.Cert == "" || config.Key == "" {
+		return nil
+	}
+
+	h3 := &http3.Server{
+		Addr:      config.Bind,
+		TLSConfig: http3.ConfigureTLSConfig(&tls.Config{}),
+		QUICConfig: &quic.Config{
+			KeepAlivePeriod: 10 * time.Second,
+		},
+	}
+	server := &webtransport.Server{
+		H3:          h3,
+		CheckOrigin: func(request *http.Request) bool { return config.AllowOrigin(request.Header.Get("Origin")) },
+	}
+	webtransport.ConfigureHTTP3Server(h3)
+	mux := http.NewServeMux()
+	mux.Handle(path.Join(config.PathPrefix, "/media/wt"), mediawebtransport.New(manager, server).Handler())
+	h3.Handler = mux
+	return server
 }
 
 func (manager *HttpManagerCtx) Start() {
@@ -122,6 +157,14 @@ func (manager *HttpManagerCtx) Start() {
 			}
 		}()
 		manager.logger.Info().Msgf("https listening on %s", manager.http.Addr)
+
+		go func() {
+			if err := manager.webTransport.ListenAndServeTLS(manager.config.Cert, manager.config.Key); err != nil &&
+				!errors.Is(err, http.ErrServerClosed) && !errors.Is(err, context.Canceled) {
+				manager.logger.Panic().Err(err).Msg("unable to start webtransport server")
+			}
+		}()
+		manager.logger.Info().Msgf("webtransport listening on udp %s", manager.http.Addr)
 
 		// if we have legacy mode, we need to start local http server too
 		if viper.GetBool("legacy") {
@@ -158,5 +201,9 @@ func (manager *HttpManagerCtx) Start() {
 func (manager *HttpManagerCtx) Shutdown() error {
 	manager.logger.Info().Msg("shutdown")
 
-	return manager.http.Shutdown(context.Background())
+	var webTransportErr error
+	if manager.webTransport != nil {
+		webTransportErr = manager.webTransport.Close()
+	}
+	return errors.Join(manager.http.Shutdown(context.Background()), webTransportErr)
 }

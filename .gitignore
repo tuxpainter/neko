@@ -35,6 +35,9 @@ bin
 *.env
 .env.development
 
+# Local development certificates
+/server/dev/runtime/certs/
+
 # Code Editors
 .idea
 

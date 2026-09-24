@@ -51,10 +51,23 @@ echo "Using app port: ${NEKO_PORT}"
 echo "Using mux port: ${NEKO_MUX}"
 echo "Using IP address: ${NEKO_NAT1TO1}"
 
+TLS_OPTS=()
+if [ "$NEKO_TLS" = "1" ]; then
+    ./cert
+    TLS_OPTS=(
+        -e "NEKO_SERVER_CERT=/etc/neko/tls/localhost.pem"
+        -e "NEKO_SERVER_KEY=/etc/neko/tls/localhost-key.pem"
+        -v "${PWD}/runtime/certs/localhost.pem:/etc/neko/tls/localhost.pem:ro"
+        -v "${PWD}/runtime/certs/localhost-key.pem:/etc/neko/tls/localhost-key.pem:ro"
+    )
+    echo "TLS and WebTransport enabled"
+fi
+
 # start server
 docker run --rm -it \
     --name "neko_server_dev" \
-    -p "${NEKO_PORT}:8080" \
+    -p "${NEKO_PORT}:8080/tcp" \
+    -p "${NEKO_PORT}:8080/udp" \
     -p "${NEKO_MUX}:${NEKO_MUX}/tcp" \
     -p "${NEKO_MUX}:${NEKO_MUX}/udp" \
     -e "NEKO_WEBRTC_UDPMUX=${NEKO_MUX}" \
@@ -63,8 +76,13 @@ docker run --rm -it \
     -e "NEKO_SESSION_FILE=/home/neko/sessions.txt" \
     -e "NEKO_SERVER_CORS=*" \
     -v "${PWD}/runtime/$CONFIG:/etc/neko/neko.yaml" \
+    "${TLS_OPTS[@]}" \
     -e "NEKO_DEBUG=1" \
     --shm-size=2G \
+    --health-cmd='if [ -n "$NEKO_SERVER_CERT" ] && [ -n "$NEKO_SERVER_KEY" ]; then wget --no-check-certificate -O - https://localhost:${NEKO_SERVER_BIND#*:}/health; else wget -O - http://localhost:${NEKO_SERVER_BIND#*:}/health; fi' \
+    --health-interval=10s \
+    --health-timeout=5s \
+    --health-retries=8 \
     --security-opt seccomp=unconfined \
     $EXTRAOPTS \
     neko_server:app;

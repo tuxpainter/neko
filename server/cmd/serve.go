@@ -189,6 +189,7 @@ func (c *serve) Start(cmd *cobra.Command) {
 	c.managers.media = media.New(
 		c.managers.session,
 		c.managers.capture,
+		c.configs.Server.Cert != "" && c.configs.Server.Key != "",
 	)
 	c.managers.mediaWebSocket = mediawebsocket.New(c.managers.media)
 	c.managers.api.AddRouter("/media", c.managers.media.Route)
@@ -211,6 +212,7 @@ func (c *serve) Start(cmd *cobra.Command) {
 	c.managers.http = http.New(
 		c.managers.webSocket,
 		c.managers.mediaWebSocket,
+		c.managers.media,
 		c.managers.api,
 		&c.configs.Server,
 	)
