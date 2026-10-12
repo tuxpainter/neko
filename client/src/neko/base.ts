@@ -43,7 +43,8 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
   get supported() {
     const mediaMode = new URLSearchParams(location.search).get('media')
     return (
-      isWebCodecsMode(mediaMode) ||
+      mediaMode === 'webcodecs-ws' ||
+      (mediaMode === 'webcodecs-wt' && typeof WebTransport !== 'undefined') ||
       (typeof RTCPeerConnection !== 'undefined' && typeof RTCPeerConnection.prototype.addTransceiver !== 'undefined')
     )
   }

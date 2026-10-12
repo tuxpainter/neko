@@ -36,7 +36,9 @@ export class NekoClient extends BaseClient implements EventEmitter<NekoEvents> {
   init(vue: Vue) {
     const url =
       process.env.NODE_ENV === 'development'
-        ? `ws://${location.host.split(':')[0]}:${process.env.VUE_APP_SERVER_PORT}/ws`
+        ? `${process.env.VUE_APP_SERVER_TLS === 'true' ? 'wss' : 'ws'}://${location.host.split(':')[0]}:${
+            process.env.VUE_APP_SERVER_PORT
+          }/ws`
         : location.protocol.replace(/^http/, 'ws') + '//' + location.host + location.pathname.replace(/\/$/, '') + '/ws'
 
     const serverURL = new URL(url)
@@ -161,7 +163,14 @@ export class NekoClient extends BaseClient implements EventEmitter<NekoEvents> {
     if (media) {
       const serverURL = new URL(this.url)
       const mediaURL = new URL(media.url, serverURL)
-      mediaURL.protocol = serverURL.protocol
+      if (media.protocol === 'webcodecs-wt-v1') {
+        mediaURL.protocol = 'https:'
+        if (process.env.VUE_APP_SERVER_WEBTRANSPORT_HOST) {
+          mediaURL.hostname = process.env.VUE_APP_SERVER_WEBTRANSPORT_HOST
+        }
+      } else {
+        mediaURL.protocol = serverURL.protocol
+      }
       this.$accessor.video.setMedia({ ...media, url: mediaURL.toString() })
     } else {
       this.$accessor.video.setMedia(null)

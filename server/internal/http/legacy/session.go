@@ -80,11 +80,15 @@ type mediaMode string
 const (
 	mediaModeWebRTC      mediaMode = "webrtc"
 	mediaModeWebCodecsWS mediaMode = "webcodecs-ws"
+	mediaModeWebCodecsWT mediaMode = "webcodecs-wt"
 )
 
 func parseMediaMode(value string) mediaMode {
-	if mediaMode(value) == mediaModeWebCodecsWS {
+	switch mediaMode(value) {
+	case mediaModeWebCodecsWS:
 		return mediaModeWebCodecsWS
+	case mediaModeWebCodecsWT:
+		return mediaModeWebCodecsWT
 	}
 	return mediaModeWebRTC
 }

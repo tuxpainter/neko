@@ -1,0 +1,67 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")"
+
+if ! command -v openssl >/dev/null 2>&1; then
+    echo "OpenSSL is required to generate local WebTransport certificates."
+    exit 1
+fi
+
+CERT_DIR="${PWD}/runtime/certs"
+mkdir -p "$CERT_DIR"
+
+write_client_env() {
+    CERTIFICATE_HASH=$(openssl x509 -in "$CERT_DIR/localhost.pem" -outform DER |
+        openssl dgst -sha256 -binary |
+        openssl base64 -A)
+    printf 'VUE_APP_SERVER_CERTIFICATE_HASH=%s\nVUE_APP_SERVER_WEBTRANSPORT_HOST=127.0.0.1\n' \
+        "$CERTIFICATE_HASH" > "${PWD}/../../client/.env"
+}
+
+if [ "$1" != "--force" ] && [ -f "$CERT_DIR/neko-dev-ca.pem" ] && [ -f "$CERT_DIR/localhost.pem" ] && [ -f "$CERT_DIR/localhost-key.pem" ] &&
+    openssl x509 -checkend 86400 -noout -in "$CERT_DIR/localhost.pem" >/dev/null; then
+    write_client_env
+    echo "Using existing $CERT_DIR/localhost.pem"
+    exit 0
+fi
+
+if [ ! -f "$CERT_DIR/neko-dev-ca.pem" ] || [ ! -f "$CERT_DIR/neko-dev-ca-key.pem" ]; then
+    openssl ecparam -name prime256v1 -genkey -noout -out "$CERT_DIR/neko-dev-ca-key.pem"
+    openssl req -x509 -new -sha256 \
+        -key "$CERT_DIR/neko-dev-ca-key.pem" \
+        -days 3650 \
+        -subj "/CN=Neko Development CA" \
+        -addext "basicConstraints=critical,CA:TRUE" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -out "$CERT_DIR/neko-dev-ca.pem"
+fi
+
+openssl ecparam -name prime256v1 -genkey -noout -out "$CERT_DIR/localhost-key.pem"
+openssl req -new -sha256 \
+    -key "$CERT_DIR/localhost-key.pem" \
+    -subj "/CN=localhost" \
+    -out "$CERT_DIR/localhost.csr"
+
+cat > "$CERT_DIR/localhost.ext" <<'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyAgreement
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1
+EOF
+
+openssl x509 -req -sha256 \
+    -in "$CERT_DIR/localhost.csr" \
+    -CA "$CERT_DIR/neko-dev-ca.pem" \
+    -CAkey "$CERT_DIR/neko-dev-ca-key.pem" \
+    -CAcreateserial \
+    -days 13 \
+    -extfile "$CERT_DIR/localhost.ext" \
+    -out "$CERT_DIR/localhost.pem"
+
+chmod 644 "$CERT_DIR/localhost-key.pem"
+rm -f "$CERT_DIR/localhost.csr" "$CERT_DIR/localhost.ext" "$CERT_DIR/neko-dev-ca.srl"
+write_client_env
+
+echo
+echo "Generated $CERT_DIR/localhost.pem"
+echo "Wrote the WebTransport certificate hash to ${PWD}/../../client/.env"

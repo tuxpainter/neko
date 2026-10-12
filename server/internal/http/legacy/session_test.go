@@ -8,6 +8,7 @@ func TestParseMediaMode(t *testing.T) {
 		want  mediaMode
 	}{
 		{value: "webcodecs-ws", want: mediaModeWebCodecsWS},
+		{value: "webcodecs-wt", want: mediaModeWebCodecsWT},
 		{value: "webcodecs", want: mediaModeWebRTC},
 		{value: "webrtc", want: mediaModeWebRTC},
 		{value: "", want: mediaModeWebRTC},

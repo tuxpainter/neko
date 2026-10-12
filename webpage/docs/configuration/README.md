@@ -330,7 +330,7 @@ This is the configuration of the neko server.
 ]} comments={false} />
 
 - <Def id="server.bind" /> address/port/socket to serve neko. For docker you might want to bind to `0.0.0.0` to allow connections from outside the container.
-- <Def id="server.cert" /> and <Def id="server.key" /> paths to the SSL cert and key used to secure the neko server. If both are empty, the server will run in plain HTTP.
+- <Def id="server.cert" /> and <Def id="server.key" /> paths to the SSL cert and key used to secure the neko server. If both are empty, the server will run in plain HTTP. When both are configured, Neko also serves WebTransport media over HTTP/3 on the same port using UDP. Expose that port over both TCP and UDP, then use `?media=webcodecs-wt` to select WebTransport.
 - <Def id="server.cors" /> is a list of allowed origins for CORS.
   - If empty, CORS is disabled, and only same-origin requests are allowed.
   - If `*` is present, all origins are allowed. Neko will respond always with the requested origin, not with `*` since [credentials are not allowed with wildcard](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS/Errors/CORSNotSupportingCredentials).
