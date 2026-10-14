@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/m1k1o/neko/server/internal/config"
 	"github.com/m1k1o/neko/server/internal/http/legacy"
+	"github.com/m1k1o/neko/server/internal/mediawebsocket"
 	"github.com/m1k1o/neko/server/pkg/types"
 )
 
@@ -23,7 +25,7 @@ type HttpManagerCtx struct {
 	http   *http.Server
 }
 
-func New(WebSocketManager types.WebSocketManager, ApiManager types.ApiManager, config *config.Server) *HttpManagerCtx {
+func New(WebSocketManager types.WebSocketManager, MediaWebSocketManager *mediawebsocket.Manager, ApiManager types.ApiManager, config *config.Server, memberConfig *config.Member) *HttpManagerCtx {
 	logger := log.With().Str("module", "http").Logger()
 
 	opts := []RouterOption{
@@ -54,8 +56,15 @@ func New(WebSocketManager types.WebSocketManager, ApiManager types.ApiManager, c
 	router.Route("/api", ApiManager.Route)
 
 	router.Get("/api/ws", WebSocketManager.Upgrade(func(r *http.Request) bool {
-		return config.AllowOrigin(r.Header.Get("Origin"))
+		origin := r.Header.Get("Origin")
+		return origin == "" || config.AllowOrigin(origin)
 	}))
+	// the media transport is optional, so the server can run without it
+	if MediaWebSocketManager != nil {
+		router.Get("/media/ws", MediaWebSocketManager.Upgrade(func(r *http.Request) bool {
+			return config.AllowOrigin(r.Header.Get("Origin"))
+		}))
+	}
 
 	batch := batchHandler{
 		Router:     router,
@@ -66,6 +75,37 @@ func New(WebSocketManager types.WebSocketManager, ApiManager types.ApiManager, c
 		},
 	}
 	router.Post("/api/batch", batch.Handle)
+
+	var staticHandler types.RouterHandler
+	if config.Static != "" {
+		fs := http.FileServer(http.Dir(config.Static))
+		staticHandler = func(w http.ResponseWriter, r *http.Request) error {
+			_, err := os.Stat(config.Static + r.URL.Path)
+			if err == nil {
+				fs.ServeHTTP(w, r)
+				return nil
+			}
+			if os.IsNotExist(err) {
+				http.NotFound(w, r)
+				return nil
+			}
+			return err
+		}
+	}
+
+	if memberConfig.Provider == "oauth" && memberConfig.OAuth.Enabled && memberConfig.OAuth.AutoRedirect {
+		router.Get("/", func(w http.ResponseWriter, r *http.Request) error {
+			if ApiManager.IsAuthenticated(r) {
+				if staticHandler != nil {
+					return staticHandler(w, r)
+				}
+				http.NotFound(w, r)
+				return nil
+			}
+			http.Redirect(w, r, path.Join(config.PathPrefix, "/api/oauth/login"), http.StatusFound)
+			return nil
+		})
+	}
 
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) error {
 		_, err := w.Write([]byte("true"))
@@ -79,20 +119,8 @@ func New(WebSocketManager types.WebSocketManager, ApiManager types.ApiManager, c
 		})
 	}
 
-	if config.Static != "" {
-		fs := http.FileServer(http.Dir(config.Static))
-		router.Get("/*", func(w http.ResponseWriter, r *http.Request) error {
-			_, err := os.Stat(config.Static + r.URL.Path)
-			if err == nil {
-				fs.ServeHTTP(w, r)
-				return nil
-			}
-			if os.IsNotExist(err) {
-				http.NotFound(w, r)
-				return nil
-			}
-			return err
-		})
+	if staticHandler != nil {
+		router.Get("/*", staticHandler)
 	}
 
 	if config.PProf {

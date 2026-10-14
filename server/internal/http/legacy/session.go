@@ -40,8 +40,10 @@ type session struct {
 
 	id, ip  string
 	token   string
+	cookie  string
 	name    string
 	isAdmin bool
+	media   mediaMode
 	client  *http.Client
 
 	lastHostID         string
@@ -70,7 +72,22 @@ func (h *LegacyHandler) newSession(r *http.Request) *session {
 			Transport: transport,
 		},
 		sessions: make(map[string]*memberStruct),
+		media:    parseMediaMode(r.URL.Query().Get("media")),
 	}
+}
+
+type mediaMode string
+
+const (
+	mediaModeWebRTC      mediaMode = "webrtc"
+	mediaModeWebCodecsWS mediaMode = "webcodecs-ws"
+)
+
+func parseMediaMode(value string) mediaMode {
+	if mediaMode(value) == mediaModeWebCodecsWS {
+		return mediaModeWebCodecsWS
+	}
+	return mediaModeWebRTC
 }
 
 func (s *session) req(method, reqPath string, headers http.Header, request io.Reader) (io.ReadCloser, http.Header, error) {
@@ -85,6 +102,8 @@ func (s *session) req(method, reqPath string, headers http.Header, request io.Re
 
 	if s.token != "" {
 		req.Header.Set("Authorization", "Bearer "+s.token)
+	} else if s.cookie != "" {
+		req.Header.Set("Cookie", s.cookie)
 	}
 
 	res, err := s.client.Do(req)
@@ -111,14 +130,19 @@ func (s *session) req(method, reqPath string, headers http.Header, request io.Re
 }
 
 func (s *session) apiReq(method, path string, request, response any) error {
+	return s.apiReqWithHeaders(method, path, request, response, nil)
+}
+
+func (s *session) apiReqWithHeaders(method, path string, request, response any, headers http.Header) error {
 	reqBody, err := json.Marshal(request)
 	if err != nil {
 		return err
 	}
 
-	headers := http.Header{
-		"Content-Type": []string{"application/json"},
+	if headers == nil {
+		headers = make(http.Header)
 	}
+	headers.Set("Content-Type", "application/json")
 
 	resBody, _, err := s.req(method, path, headers, bytes.NewReader(reqBody))
 	if err != nil {
@@ -174,6 +198,16 @@ func (s *session) toBackend(event string, payload any) error {
 
 func (s *session) create(username, password string) error {
 	data := api.SessionDataPayload{}
+	if cookie := s.r.Header.Get("Cookie"); cookie != "" {
+		err := s.apiReqWithHeaders(http.MethodGet, "/api/whoami", nil, &data, http.Header{
+			"Cookie": []string{cookie},
+		})
+		if err == nil {
+			s.cookie = cookie
+			s.setSessionData(data)
+			return nil
+		}
+	}
 
 	err := s.apiReq(http.MethodPost, "/api/login", api.SessionLoginPayload{
 		Username: username,
@@ -183,18 +217,21 @@ func (s *session) create(username, password string) error {
 		return err
 	}
 
+	s.setSessionData(data)
+
+	if s.token == "" {
+		return fmt.Errorf("token not found")
+	}
+
+	return nil
+}
+
+func (s *session) setSessionData(data api.SessionDataPayload) {
 	s.id, s.ip = data.ID, getIp(s.r)
 	s.h.sessionIPs[s.id] = s.ip // save session ip by id
 	s.token = data.Token
 	s.name = data.Profile.Name
 	s.isAdmin = data.Profile.IsAdmin
-
-	// if Cookie auth, the token will be empty
-	if s.token == "" {
-		return fmt.Errorf("token not found - make sure you are not using Cookie auth on the server")
-	}
-
-	return nil
 }
 
 func (s *session) destroy() {
